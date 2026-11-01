@@ -56,9 +56,26 @@ function mins(){return`<div class="mins" role="group" aria-label="Session time">
 const using=()=>E.find(e=>e.status==='inuse'&&e.by==='You');
 const busyMsg=()=>'You are already using '+using().name+'. Finish that session before starting another.';
 function banner(){const u=using();return u&&S.screen!=='login'?`<div class="card now"><b>You are using ${u.name}</b><span class="sub"> · ${fmt(u.rem)} left</span><br><button class="link" data-a="finish" data-id="${u.id}">Finish session</button></div>`:''}
+const ADMIN_EMAIL = 'adminchris@example.com';
+let isAdmin = false;
+
+async function enter(id){
+ try{localStorage.setItem('spotUser',String(id))}catch(x){}
+ await db.from('users').update({checked_in:true}).eq('user_id',id);
+  await db.rpc('close_stale_check_ins');
+ const openRow=await db.from('check_ins').select('check_in_id').eq('user_id',id).is('checked_out_at',null).limit(1);
+ if(!openRow.data||!openRow.data.length)await db.from('check_ins').insert({user_id:id});
+ const u=await db.from('users').select('email').eq('user_id',id).maybeSingle();S.name=u.data&&u.data.email?u.data.email.split('@')[0]:'';
+ S.me=id;S.checked=true;S.msg='';S.email='';await load();derive();S.screen=u.data&&u.data.email===ADMIN_EMAIL?'admin':'find';S.stack=[];render()
+}
+
+function banner(){const u=using();return S.email===ADMIN_EMAIL?`<div class="card now"><b>Spot Admin</b><span class="sub"> · Dashboard</span></div>`:u&&S.screen!=='login'?`<div class="card now"><b>You are using ${u.name}</b><span class="sub"> · ${fmt(u.rem)} left</span><br><button class="link" data-a="finish" data-id="${u.id}">Finish session</button></div>`:''}
+
+
 const V={
 login:()=>{const su=S.mode==='signup';return`<h1>Skip the guessing.<br>Know the wait.</h1><p>${su?'Create an account to join waitlists and track your sessions.':'Log in to see which equipment is free and how long the line is.'}</p>
 <form id="lf" class="card"><h2>${su?'Create account':'Log in'}</h2><label for="em">Email</label><input id="em" type="email" autocomplete="email" value="${(S.email||'').replace(/"/g,'&quot;')}" required><label for="pw">Password</label><input id="pw" type="password" autocomplete="${su?'new-password':'current-password'}" required>${su?'<label for="pw2">Confirm password</label><input id="pw2" type="password" autocomplete="new-password" required>':''}${S.msg?`<p class="${S.ok?'hint':'err'}" role="alert">${S.msg}</p>`:''}<button class="btn" type="submit">${su?'Create account':'Log in'}</button><p style="margin:14px 0 0">${su?'Already have an account?':'New here?'} <button type="button" class="link" data-a="mode">${su?'Log in':'Create an account'}</button></p></form>`},
+admin:()=>{const stats=E.reduce((acc,e)=>{acc[e.status]=(acc[e.status]||0)+1;return acc},{available:0,inuse:0,reserved:0,unavailable:0});return`<h2>Admin Dashboard</h2><div class="card"><h3>Equipment Status</h3><div class="stats"><div class="stat"><b>${stats.available}</b> Available</div><div class="stat"><b>${stats.inuse}</b> In Use</div><div class="stat"><b>${stats.reserved}</b> Reserved</div><div class="stat"><b>${stats.unavailable}</b> Unavailable</div></div></div><div class="card"><h3>Users in Waitlists</h3><div class="stats"><div class="stat"><b>${E.reduce((a,e)=>a+(e.queue.length||0),0)}</b>Total in Lines</div></div></div><div class="card"><h3>Current Sessions</h3><div class="stats"><div class="stat"><b>${E.filter(e=>e.status==='inuse').length}</b>Active Sessions</div></div></div>`},
 find:()=>`
     <h2>What are you training?</h2>
 
@@ -92,9 +109,10 @@ find:()=>`
         Browse by muscle group
     </button>
 `,
+
 groups:()=>`<h2>Pick a muscle group</h2><div class="chips">${GROUPS.map(g=>`<button class="chip" data-a="group" data-g="${g}" aria-pressed="false">${g}</button>`).join('')}</div>`,
 map:()=>{const l=E.filter(e=>(!S.group||e.g===S.group)&&(!S.q||e.name.toLowerCase().includes(S.q)));
- const alt=S.group?'':'';return`<h2>${S.group||(S.q?'Results for “'+S.q+'”':'All equipment')}</h2><p class="hint">Tap a machine to see its wait. You are on ${mine().length} of ${MAXLISTS} waitlists.</p>
+ const alt=S.group?'':'';return`<h2>${S.group||(S.q?'Results for "'+S.q+'":"':'All equipment')}</h2><p class="hint">Tap a machine to see its wait. You are on ${mine().length} of ${MAXLISTS} waitlists.</p>
  ${l.length?`<div class="floor">${l.map(tile).join('')}</div>`:'<p>No equipment matches. Try another search or muscle group.</p>'}
  ${mine().length?'<button class="btn alt" data-a="mylists">View my waitlists</button>':''}`},
 detail:()=>{const e=get(S.sel),pos=e.queue.indexOf('You')+1;let act='';
@@ -110,7 +128,6 @@ detail:()=>{const e=get(S.sel),pos=e.queue.indexOf('You')+1;let act='';
  ${alts.length?`<h3 style="margin-top:22px">Free right now, same muscle group</h3><div class="floor">${alts.map(tile).join('')}</div>`:''}`},
 mylists:()=>{const l=mine();return`<h2>My waitlists</h2>${l.length?l.map(e=>`<div class="card"><h3>${e.name}</h3><div class="stats"><div class="stat"><b>#${e.queue.indexOf('You')+1}</b>Your position</div><div class="stat"><b>~${wait(e)-(e.queue.length-1-e.queue.indexOf('You'))*AVG/60|0} min</b>Estimated wait</div></div><p class="hint">${e.status==='reserved'?'Held for the next person in line.':fmt(e.rem||0)+' left on the current session.'}</p><button class="btn danger" data-a="cancel" data-id="${e.id}">Cancel my spot</button></div>`).join(''):'<p>You are not on any waitlist. Find equipment to join one.</p>'}<button class="btn alt" data-a="find">Find more equipment</button>`},
 claim:()=>{const e=get(S.claim);return`<div class="card claim-card"><h2>${e.name} is ready</h2><p>Claim it before the timer runs out, or the next person gets it.</p><div class="big" aria-live="off">${fmt(e.claimLeft)}</div><p>How long will you use it?</p>${mins()}${S.msg?`<p class="err" role="alert">${S.msg}</p>`:''}<button class="btn" data-a="claim">Claim equipment</button><button class="btn danger" data-a="cancel" data-id="${e.id}">Give up my spot</button></div>`}};
-function banner(){const u=using();return u&&S.screen!=='login'?`<div class="card now"><b>You are using ${u.name}</b><span class="sub"> · ${fmt(u.rem)} left</span><br><button class="link" data-a="finish" data-id="${u.id}">Finish session</button></div>`:''}
 
 function derive(){const t=vnow();
  E=RAW.eq.map(q=>{const rows=RAW.wl.filter(w=>w.equipment_id===q.equipment_id).sort((a,b)=>a.position-b.position);
@@ -147,6 +164,7 @@ function view(){
  else if(!turn&&S.screen==='claim'){S.claim=null;S.screen='map';S.stack=['find'];S.msg=''}
  if(!['find','groups','login'].includes(S.screen)){const y=window.scrollY;render();window.scrollTo(0,y)}}
 const fkey=el=>el?[el.id,el.dataset.a,el.dataset.id,el.dataset.m,el.dataset.g].join('|'):'';
+
 function render(){
  const f=document.activeElement,inApp=f&&app.contains(f),k=inApp?fkey(f):'';
  const twins=()=>[...app.querySelectorAll(f.tagName)].filter(x=>fkey(x)===k);
@@ -165,7 +183,10 @@ if (S.screen === 'login') {
 $('#menu-name').textContent = S.name || 'My Account';
 $('#menu-avatar').textContent =
     (S.name || '?').charAt(0).toUpperCase();
+
+$('#brand').textContent = (S.email===ADMIN_EMAIL?'Spot Admin':'Spot');
 }
+
 
 async function enter(id){
  try{localStorage.setItem('spotUser',String(id))}catch(x){}
@@ -174,7 +195,9 @@ async function enter(id){
  const openRow=await db.from('check_ins').select('check_in_id').eq('user_id',id).is('checked_out_at',null).limit(1);
  if(!openRow.data||!openRow.data.length)await db.from('check_ins').insert({user_id:id});
  const u=await db.from('users').select('email').eq('user_id',id).maybeSingle();S.name=u.data&&u.data.email?u.data.email.split('@')[0]:'';
- S.me=id;S.checked=true;S.msg='';S.email='';await load();derive();S.screen='find';S.stack=[];render()}
+ S.me=id;S.checked=true;S.msg='';S.email='';await load();derive();S.screen=u.data&&u.data.email===ADMIN_EMAIL?'admin':'find';S.stack=[];render()
+}
+
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape')$('#modal').hidden=true});
 document.addEventListener('submit',async ev=>{ev.preventDefault();
  if(ev.target.id==='lf'){const em=$('#em').value.trim(),pw=$('#pw').value,su=S.mode==='signup';S.email=em;S.ok=false;
