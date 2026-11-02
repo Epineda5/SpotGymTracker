@@ -444,6 +444,19 @@ setInterval(async()=>{
  S.msg='You were logged out after '+Math.round(IDLE_MS/60000)+' minutes of inactivity. Log in to continue.';
  render();
 },30000);
+// ---- Remember the current page across refreshes ----
+function saveView(){
+ if(!S.me||S.screen==='login'||S.screen==='claim')return;
+ try{localStorage.setItem('spotView',JSON.stringify({u:S.me,screen:S.screen,stack:S.stack,sel:S.sel,group:S.group,q:S.q}))}catch(x){}}
+window.addEventListener('pagehide',saveView);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveView()});
+function restoreView(){
+ let v=null;try{v=JSON.parse(localStorage.getItem('spotView')||'null')}catch(x){}
+ if(!v||v.u!==S.me)return;
+ if(!['find','groups','map','detail','mylists'].includes(v.screen))return;
+ if(v.screen==='detail'&&!get(v.sel))return;
+ S.screen=v.screen;S.stack=Array.isArray(v.stack)?v.stack:[];S.sel=v.sel;S.group=v.group;S.q=v.q||'';
+ render();}
 render();
 (async()=>{let saved=null;try{saved=localStorage.getItem('spotUser')}catch(x){}
  if(!saved)return;
@@ -451,5 +464,5 @@ render();
  if(seen&&Date.now()-seen>IDLE_MS){try{localStorage.removeItem('spotUser')}catch(x){}return}
  const {data,error}=await db.from('users').select('user_id').eq('user_id',saved).maybeSingle();
  if(error)console.error('Could not restore login:',error.message);
- else if(data)enter(data.user_id);
+ else if(data){await enter(data.user_id);restoreView()}
  else try{localStorage.removeItem('spotUser')}catch(x){}})();
