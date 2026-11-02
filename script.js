@@ -71,6 +71,79 @@ async function enter(id){
 
 function banner(){const u=using();return S.email===ADMIN_EMAIL?`<div class="card now"><b>Spot Admin</b><span class="sub"> · Dashboard</span></div>`:u&&S.screen!=='login'?`<div class="card now"><b>You are using ${u.name}</b><span class="sub"> · ${fmt(u.rem)} left</span><br><button class="link" data-a="finish" data-id="${u.id}">Finish session</button></div>`:''}
 
+let usageStats = [];
+let usageStatus = 'loading';
+let usageLoadedAt = null;
+
+function equipmentUsageTable() {
+    if (usageStatus === 'error') {
+        return `
+            <div class="card">
+                <h3>Equipment Usage</h3>
+                <p role="alert">Could not load usage statistics.</p>
+            </div>`;
+    }
+
+    if (usageStatus === 'loading') {
+        return `
+            <div class="card">
+                <h3>Equipment Usage</h3>
+                <p>Loading usage statistics…</p>
+            </div>`;
+    }
+
+    const escapeText = value => String(value).replace(
+        /[&<>"']/g,
+        character => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[character]
+    );
+
+    const rows = usageStats.map(machine => `
+        <tr>
+            <td>${escapeText(machine.name)}</td>
+            <td>${Number(machine.completed_sessions)}</td>
+            <td>${Number(machine.total_minutes_used).toFixed(2)}</td>
+            <td>${Number(machine.average_minutes_per_session).toFixed(2)}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <div class="card">
+            <h3>Equipment Usage</h3>
+            <p class="hint">
+                Recorded completed sessions · All time · Durations in minutes
+            </p>
+            <p class="hint">
+                Last loaded: ${usageLoadedAt
+                    ? usageLoadedAt.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })
+                    : '—'}
+            </p>
+
+            <div style="overflow-x:auto">
+                <table style="width:100%; text-align:left; border-spacing:12px">
+                    <thead>
+                        <tr>
+                            <th scope="col">Machine</th>
+                            <th scope="col">Times used</th>
+                            <th scope="col">Total minutes</th>
+                            <th scope="col">Average minutes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows || '<tr><td colspan="4">No equipment found.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+}
 
 const V={
 login:()=>{const su=S.mode==='signup';return`<h1>Skip the guessing.<br>Know the wait.</h1><p>${su?'Create an account to join waitlists and track your sessions.':'Log in to see which equipment is free and how long the line is.'}</p>
@@ -138,10 +211,47 @@ function derive(){const t=vnow();
   else if(rows.length){e.status='reserved';e.claimLeft=rows[0].notified_at?CLAIM-(t-Date.parse(rows[0].notified_at))/1000:CLAIM}
   else e.status='available';
   return e})}
-async function load(){
- const [a,b,c]=await Promise.all([db.from('equipment').select('*').order('equipment_id'),db.from('waitlist').select('*').order('position'),db.from('equipment_session').select('*')]);
- const err=a.error||b.error||c.error;if(err){toast('Database error: '+err.message);return false}
- RAW={eq:a.data,wl:b.data,se:c.data};return true}
+async function load() {
+    const [a, b, c] = await Promise.all([
+        db.from('equipment').select('*').order('equipment_id'),
+        db.from('waitlist').select('*').order('position'),
+        db.from('equipment_session').select('*')
+    ]);
+
+    const error = a.error || b.error || c.error;
+
+    if (error) {
+        toast('Database error: ' + error.message);
+        return false;
+    }
+
+    RAW = {
+        eq: a.data,
+        wl: b.data,
+        se: c.data
+    };
+
+    if (S.screen === 'admin' && usageStatus === 'loading') {
+        try {
+            const result = await db
+                .from('equipment_usage_stats')
+                .select('*')
+                .order('completed_sessions', { ascending: false })
+                .order('name');
+
+            if (result.error) throw result.error;
+
+            usageStats = result.data || [];
+            usageStatus = 'ready';
+            usageLoadedAt = new Date();
+        } catch (error) {
+            usageStatus = 'error';
+            console.error('Usage statistics failed:', error);
+        }
+    }
+
+    return true;
+}
 async function compact(eid){
  const {data}=await db.from('waitlist').select('waitlist_id,position').eq('equipment_id',eid).order('position');
  await Promise.all((data||[]).map((r,i)=>r.position===i+1?null:db.from('waitlist').update({position:i+1,notified_at:null}).eq('waitlist_id',r.waitlist_id)))}
@@ -169,8 +279,8 @@ function render(){
  const f=document.activeElement,inApp=f&&app.contains(f),k=inApp?fkey(f):'';
  const twins=()=>[...app.querySelectorAll(f.tagName)].filter(x=>fkey(x)===k);
  const n=inApp?twins().indexOf(f):-1,pos=inApp?[...app.querySelectorAll(f.tagName)].indexOf(f):-1;
- app.innerHTML=banner()+V[S.screen]();
- if(inApp&&k!=='||||'){const m=twins();const t=m[n]||m[0]||[...app.querySelectorAll(f.tagName)][pos];if(t)t.focus({preventScroll:true})}
+app.innerHTML = banner() + V[S.screen]()
+    + (S.screen === 'admin' ? equipmentUsageTable() : ''); if(inApp&&k!=='||||'){const m=twins();const t=m[n]||m[0]||[...app.querySelectorAll(f.tagName)][pos];if(t)t.focus({preventScroll:true})}
  $('#back').hidden = !S.stack.length || S.screen === 'claim';
 
 $('#menu-toggle').hidden = S.screen === 'login';
