@@ -209,3 +209,107 @@ input,
 .suggestion.active {
     background: var(--bg);
 }
+
+
+/* ========================================
+   SPOT - GYM LOCATION SELECTOR
+======================================== */
+
+/* Keep the logo next to the selector */
+.bar .brand {
+    flex: 0 0 auto;
+  }
+  
+  .bar .menu-wrap {
+    margin-left: auto;
+  }
+  
+  /* Location selector container */
+  .gym-selector {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 3px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.10);
+    transition: background 0.2s, border-color 0.2s;
+  }
+  
+  .gym-selector:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: var(--accent);
+  }
+  
+  /* Yellow location icon */
+  .gym-label {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  
+  /* Dropdown */
+  #gym-location {
+    appearance: auto;
+    -webkit-appearance: menulist;
+    background: transparent;
+    color: #fff;
+    border: none;
+    outline: none;
+    font: 600 14px Barlow, sans-serif;
+    cursor: pointer;
+    min-height: 38px;
+    max-width: 180px;
+    width: 100%;
+  }
+  
+  /* Dropdown choices */
+  #gym-location option {
+    background: #fff;
+    color: #16212c;
+  }
+  
+  /* Accessible keyboard focus */
+  .gym-selector:focus-within {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+  
+  /* Screen-reader-only text */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  
+  /* Smaller screens */
+  @media (max-width: 480px) {
+    .bar {
+      gap: 6px;
+    }
+  
+    .gym-selector {
+      padding: 2px 5px;
+      gap: 4px;
+    }
+  
+    #gym-location {
+      font-size: 12px;
+      max-width: 128px;
+    }
+  
+    .gym-label svg {
+      width: 15px;
+      height: 15px;
+    }
+  }
+  
