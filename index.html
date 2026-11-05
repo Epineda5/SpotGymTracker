@@ -18,6 +18,20 @@
       <span id="selected-gym-name"></span>
       <span aria-label="Gym location locked" title="Gym location locked">🔒</span>
     </div>
+    <div class="notification-wrap" id="notification-wrap" hidden>
+  <button id="notification-toggle" type="button"
+    aria-label="Notifications"
+    aria-expanded="false"
+    aria-controls="notification-panel">
+    🔔 <span id="notification-count" hidden></span>
+  </button>
+
+  <div id="notification-panel" class="notification-panel" hidden>
+    <strong>Notifications</strong>
+    <p class="hint">No notifications yet.</p>
+    <div id="notification-items"></div>
+  </div>
+</div>
     <div class="menu-wrap">
       <button id="menu-toggle" type="button"
               aria-expanded="false" aria-controls="spot-menu">
