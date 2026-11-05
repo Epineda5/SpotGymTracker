@@ -42,6 +42,100 @@ const S = {
 const $ = selector => document.querySelector(selector);
 const app = $('#screen');
 
+
+const spotNotifications = [];
+const notifiedTurns = new Set();
+
+function checkWaitlistNotifications() {
+  if (!S.me) return;
+
+  for (const e of E) {
+    const first = e.rows?.[0];
+
+    if (
+      !first ||
+      first.user_id !== S.me ||
+      !first.notified_at ||
+      e.claimLeft <= 0
+    ) continue;
+
+    const key = String(first.waitlist_id);
+
+    if (notifiedTurns.has(key)) continue;
+
+    notifiedTurns.add(key);
+
+    spotNotifications.unshift({
+      id: key,
+      title: "It's your turn!",
+      message: e.name + " is ready. You have 90 seconds to claim it.",
+      equipment_id: e.id,
+      read: false
+    });
+
+    toast(e.name + " is ready! Check your notifications.");
+  }
+
+  renderSpotNotifications();
+}
+
+function renderSpotNotifications() {
+  const count = $('#notification-count');
+  const items = $('#notification-items');
+  const panel = $('#notification-panel');
+
+  if (!count || !items || !panel) return;
+
+  const unread = spotNotifications.filter(n => !n.read).length;
+
+  count.hidden = unread === 0;
+  count.textContent = unread > 9 ? '9+' : String(unread);
+
+  const empty = panel.querySelector('.hint');
+  if (empty) empty.hidden = spotNotifications.length > 0;
+
+  items.replaceChildren();
+
+  for (const n of spotNotifications) {
+    const item = document.createElement('div');
+    item.className = 'spot-notification-item';
+
+    const title = document.createElement('strong');
+    title.textContent = n.title;
+
+    const message = document.createElement('p');
+    message.textContent = n.message;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'View equipment';
+
+    button.addEventListener('click', () => {
+      n.read = true;
+      panel.hidden = true;
+      $('#notification-toggle')?.setAttribute('aria-expanded', 'false');
+
+      const equipment = E.find(e => e.id === n.equipment_id);
+
+      if (equipment?.status === 'reserved' &&
+          equipment.rows?.[0]?.user_id === S.me &&
+          equipment.claimLeft > 0) {
+        S.claim = n.equipment_id;
+        S.screen = 'claim';
+      } else {
+        toast('This equipment is no longer reserved for you.');
+      }
+
+      renderSpotNotifications();
+      view();
+    });
+
+    item.append(title, message, button);
+    items.append(item);
+  }
+}
+
+
 try {
   S.warp = Number(localStorage.getItem('spotWarp')) || 0;
 } catch (error) {}
@@ -1029,6 +1123,7 @@ async function sync() {
   if (await load()) {
     derive();
     await maintain();
+    checkWaitlistNotifications();
   }
 
   view();
@@ -1042,27 +1137,48 @@ function view() {
     e.queue[0] === 'You'
   );
 
-  if (
-    turn &&
-    S.screen !== 'claim' &&
-    S.screen !== 'login'
-  ) {
-    S.claim = turn.id;
-    S.stack = [];
+  
+if (
+  turn &&
+  !S.claim &&
+  S.screen !== 'login'
+) {
+  S.claim = turn.id;
+
+  if (S.screen !== 'claim') {
+    S.stack.push(S.screen);
     S.screen = 'claim';
     toast(turn.name + ' is ready. Claim it now.');
-  } else if (!turn && S.screen === 'claim') {
-    S.claim = null;
+  }
+} else if (!turn && S.claim) {
+  S.claim = null;
+
+  if (S.screen === 'claim') {
     S.screen = 'map';
     S.stack = ['find'];
     S.msg = '';
   }
+}
 
-  if (!['find', 'groups', 'login'].includes(S.screen)) {
-    const y = window.scrollY;
-    render();
-    window.scrollTo(0, y);
+
+  
+if (S.screen === 'claim' && app.querySelector('.claim-card')) {
+  const timer = app.querySelector('.claim-card .big');
+  const equipment = get(S.claim);
+
+  if (timer && equipment) {
+    timer.textContent = fmt(equipment.claimLeft);
   }
+
+  return;
+}
+
+if (!['find', 'groups', 'login'].includes(S.screen)) {
+  const y = window.scrollY;
+  render();
+  window.scrollTo(0, y);
+}
+
 }
 
 // ========================================
@@ -1106,9 +1222,17 @@ function render() {
   if (back) {
     back.hidden =
       !S.stack.length ||
-      S.screen === 'claim' ||
       S.screen === 'gym-select';
   }
+
+const notificationWrap = $('#notification-wrap');
+
+if (notificationWrap) {
+  notificationWrap.hidden =
+    !S.me ||
+    S.screen === 'login' ||
+    S.screen === 'gym-select';
+}
 
   const menuToggle = $('#menu-toggle');
   const menu = $('#spot-menu');
@@ -1410,6 +1534,23 @@ const myRow = e =>
 document.addEventListener('click', async ev => {
   const b = ev.target.closest('button');
   if (!b) return;
+
+
+if (b.id === 'notification-toggle') {
+  const panel = $('#notification-panel');
+
+  if (!panel) return;
+
+  panel.hidden = !panel.hidden;
+
+  b.setAttribute(
+    'aria-expanded',
+    String(!panel.hidden)
+  );
+
+  return;
+}
+
 
   if (b.id === 'menu-toggle') {
     const menu = $('#spot-menu');
@@ -1821,9 +1962,29 @@ setInterval(() => {
   view();
 }, 1000);
 
-setInterval(() => {
-  if (S.me) sync();
-}, 4000);
+
+let syncRunning = false;
+
+async function fastSync() {
+  if (!S.me || syncRunning || document.hidden) return;
+
+  syncRunning = true;
+
+  try {
+    await sync();
+  } catch (error) {
+    console.error('Spot sync error:', error);
+  } finally {
+    syncRunning = false;
+  }
+}
+
+setInterval(fastSync, 1000);
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) fastSync();
+});
+
 
 setInterval(() => {
   if (S.me) {
