@@ -567,4 +567,6 @@ input,
     padding: 10px;
   }
 }
-
+html.spot-loading #app {
+  visibility: hidden;
+}
