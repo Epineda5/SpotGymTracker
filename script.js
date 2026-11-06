@@ -1343,11 +1343,16 @@ async function enter(id) {
     localStorage.setItem('spotUser', String(id));
   } catch (error) {}
 
+  const cleanup = await db.rpc('close_stale_check_ins');
+
+  if (cleanup.error) {
+    toast('Could not check in: ' + cleanup.error.message);
+    return;
+  }
+
   await db.from('users')
     .update({ checked_in: true })
     .eq('user_id', id);
-
-  await db.rpc('close_stale_check_ins');
 
   const openRow = await db.from('check_ins')
     .select('check_in_id')
