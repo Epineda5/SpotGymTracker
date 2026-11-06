@@ -174,14 +174,6 @@ async function loadGymLocations() {
   }
 }
 
-// Initialize: Load gyms when app starts
-(async () => {
-  await loadGymLocations();
-  
-  // Continue with normal initialization
-  // ... existing code below
-})();
-
 
 function distanceMiles(lat1, lng1, lat2, lng2) {
   const r = Math.PI / 180;
@@ -2142,6 +2134,12 @@ function restoreView() {
 
   if (!saved || saved.u !== S.me) return;
 
+  // FIX: Check if GYM_LOCATIONS has data before trying to find gym
+  if (!GYM_LOCATIONS || GYM_LOCATIONS.length === 0) {
+    console.warn('No gym locations loaded, skipping restoreView');
+    return;
+  }
+
   const gym = GYM_LOCATIONS.find(
     g => g.id === saved.gymId
   );
@@ -2185,6 +2183,7 @@ function restoreView() {
   render();
 }
 
+
 window.addEventListener('pagehide', saveView);
 
 document.addEventListener('visibilitychange', () => {
@@ -2199,12 +2198,24 @@ document.addEventListener('visibilitychange', () => {
 
 render();
 
+// ========================================
+// INITIALIZE APPLICATION
+// ========================================
+
+render();  // Render login screen initially
+
 (async () => {
-  let savedUser = null;
+  // Load gym locations with error handling
+  try {
+    await loadGymLocations();
+    console.log('Gym locations loaded successfully');
+  } catch (error) {
+    console.error('Failed to load gym locations:', error);
+    toast('Failed to load gym locations');
+    // Continue anyway - app will use default view
+  }
 
-   await loadGymLocations();
-
-  // Then proceed with normal initialization
+  // Check for saved user session
   let savedUser = null;
 
   try {
@@ -2222,22 +2233,19 @@ render();
   let lastSeen = 0;
 
   try {
-    lastSeen =
-      Number(localStorage.getItem('spotSeen')) || 0;
+    lastSeen = Number(localStorage.getItem('spotSeen')) || 0;
   } catch (error) {}
 
-  if (
-    lastSeen &&
-    Date.now() - lastSeen > IDLE_MS
-  ) {
+  // Handle idle timeout
+  if (lastSeen && Date.now() - lastSeen > IDLE_MS) {
     try {
       localStorage.removeItem('spotUser');
       localStorage.removeItem('spotView');
     } catch (error) {}
-
     return;
   }
 
+  // Verify user exists and restore session
   const { data, error } = await db
     .from('users')
     .select('user_id')
@@ -2245,15 +2253,14 @@ render();
     .maybeSingle();
 
   if (error) {
-    console.error(
-      'Could not restore login:',
-      error.message
-    );
+    console.error('Could not restore login:', error.message);
     return;
   }
 
   if (data) {
     await enter(data.user_id);
+    
+    // Now restore view after gym locations are loaded
     restoreView();
   } else {
     try {
@@ -2262,3 +2269,4 @@ render();
     } catch (error) {}
   }
 })();
+
