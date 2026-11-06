@@ -3,6 +3,70 @@ const SUPABASE_URL = 'https://nfdrezutavvxhmblsqdk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_FQmEnU0iXInf1Q8lvmMunw_o5UacvKM';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+
+async function getSpotUser() {
+  const { data: authData, error: authError } =
+    await db.auth.getUser();
+
+  if (authError || !authData.user ||
+      !authData.user.email_confirmed_at) {
+    return null;
+  }
+
+  const { data, error } = await db
+    .from('users')
+    .select('user_id')
+    .eq('auth_user_id', authData.user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  // Link an existing Spot account by verified email.
+  if (!data) {
+    const { data: existing, error: lookupError } = await db
+      .from('users')
+      .select('user_id, auth_user_id')
+      .eq('email', authData.user.email)
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
+
+    if (existing) {
+      if (existing.auth_user_id &&
+          existing.auth_user_id !== authData.user.id) {
+        throw new Error('This Spot account is already linked.');
+      }
+
+      const { error: linkError } = await db
+        .from('users')
+        .update({ auth_user_id: authData.user.id })
+        .eq('user_id', existing.user_id)
+        .is('auth_user_id', null);
+
+      if (linkError) throw linkError;
+
+      return existing.user_id;
+    }
+
+    const { data: created, error: createError } = await db
+      .from('users')
+      .insert({
+        email: authData.user.email,
+        password: '',
+        auth_user_id: authData.user.id
+      })
+      .select('user_id')
+      .single();
+
+    if (createError) throw createError;
+
+    return created.user_id;
+  }
+
+  return data.user_id;
+}
+
+
 const MAXLISTS = 3;
 const AVG = 720;
 const CLAIM = 90;
@@ -1417,47 +1481,90 @@ document.addEventListener('submit', async ev => {
       return;
     }
 
-    let id;
-
+    
     if (signup) {
-      const result = await db.from('users')
-        .insert({ email, password })
-        .select('user_id')
-        .single();
+      const { data, error } = await db.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin +
+            window.location.pathname
+        }
+      });
 
-      if (result.error) {
-        S.msg = result.error.code === '23505'
-          ? 'That email already has an account.'
-          : result.error.message;
+      if (error) {
+        S.msg = error.message;
         render();
         return;
       }
 
-      id = result.data.user_id;
-    } else {
-      const result = await db.from('users')
-        .select('user_id')
-        .eq('email', email)
-        .eq('password', password)
-        .maybeSingle();
-
-      if (result.error) {
-        S.msg = result.error.message;
+      if (!data.session) {
+        S.mode = 'login';
+        S.ok = true;
+        S.msg = 'Account created! Check your email and click the verification link before logging in.';
         render();
         return;
       }
 
-      if (!result.data) {
-        S.msg =
-          'We could not log you in. Check your email and password.';
-        render();
-        return;
-      }
-
-      id = result.data.user_id;
+      // Do not allow an unverified signup into Spot.
+      await db.auth.signOut();
+      S.mode = 'login';
+      S.ok = true;
+      S.msg = 'Check your email to verify your account.';
+      render();
+      return;
     }
 
-    await enter(id);
+    const { error } = await db.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+  // Temporary legacy login for local development only.
+  const localDev =
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === 'localhost';
+
+  if (localDev) {
+    const { data: oldAccount, error: oldError } = await db
+      .from('users')
+      .select('user_id')
+      .eq('email', email)
+      .eq('password', password)
+      .is('auth_user_id', null)
+      .maybeSingle();
+
+    if (!oldError && oldAccount) {
+      localStorage.setItem('spotLegacyUser', String(oldAccount.user_id));
+      await enter(oldAccount.user_id);
+      return;
+    }
+  }
+
+  S.msg = error.message.toLowerCase().includes('not confirmed')
+    ? 'Please verify your email before logging in.'
+    : 'Incorrect email or password.';
+
+  render();
+  return;
+}
+
+    try {
+      const id = await getSpotUser();
+
+      if (!id) {
+        await db.auth.signOut();
+        S.msg = 'Please verify your email first.';
+        render();
+        return;
+      }
+
+      await enter(id);
+    } catch (err) {
+      S.msg = err.message;
+      render();
+    }
   }
 
   if (ev.target.id === 'sf') {
@@ -1719,9 +1826,12 @@ if (b.id === 'notification-toggle') {
       .eq('user_id', S.me)
       .is('checked_out_at', null);
 
+    await db.auth.signOut();
+    
     try {
       localStorage.removeItem('spotUser');
       localStorage.removeItem('spotView');
+      localStorage.removeItem('spotLegacyUser');
     } catch (error) {}
 
     S.me = null;
@@ -2119,6 +2229,7 @@ setInterval(async () => {
 
   const id = S.me;
   S.me = null;
+  await db.auth.signOut();
 
   await db.from('users')
     .update({ checked_in: false })
@@ -2134,6 +2245,7 @@ setInterval(async () => {
   try {
     localStorage.removeItem('spotUser');
     localStorage.removeItem('spotView');
+    localStorage.removeItem('spotLegacyUser');
   } catch (error) {}
 
   S.name = '';
@@ -2259,75 +2371,84 @@ document.addEventListener('visibilitychange', () => {
 // INITIALIZE APPLICATION
 // ========================================
 
-// ========================================
-// INITIALIZE APPLICATION
-// ========================================
+render();
 
-render();  // Render login screen initially
+function finishStartup() {
+  document.documentElement.classList.remove('spot-loading');
+}
+
 
 (async () => {
-  // Load gym locations with error handling
   try {
     await loadGymLocations();
     console.log('Gym locations loaded successfully');
-    console.log('Available gyms:', GYM_LOCATIONS.length);
   } catch (error) {
     console.error('Failed to load gym locations:', error);
-    toast('Failed to load gym locations');
-    // Continue anyway - app will use default view
   }
 
-  // Check for saved user session
-  let savedUser = null;
-
   try {
-    savedUser = localStorage.getItem('spotUser');
-  } catch (error) {}
+    const { data: sessionData } =
+      await db.auth.getSession();
 
-  if (!savedUser) return;
+    if (!sessionData.session) {
+  const localDev =
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === 'localhost';
 
-  try {
-    savedUser = localStorage.getItem('spotUser');
-  } catch (error) {}
+  const legacyId = localDev
+    ? Number(localStorage.getItem('spotLegacyUser'))
+    : 0;
 
-  if (!savedUser) return;
+  const lastSeen =
+    Number(localStorage.getItem('spotSeen')) || 0;
 
-  let lastSeen = 0;
+  if (legacyId && (!lastSeen || Date.now() - lastSeen <= IDLE_MS)) {
+    const { data: account } = await db
+      .from('users')
+      .select('user_id')
+      .eq('user_id', legacyId)
+      .is('auth_user_id', null)
+      .maybeSingle();
 
-  try {
-    lastSeen = Number(localStorage.getItem('spotSeen')) || 0;
-  } catch (error) {}
+    if (account) {
+      await enter(account.user_id);
+      restoreView();
+      return;
+    }
+  }
 
-  // Handle idle timeout
-  if (lastSeen && Date.now() - lastSeen > IDLE_MS) {
-    try {
+  localStorage.removeItem('spotLegacyUser');
+  localStorage.removeItem('spotUser');
+  localStorage.removeItem('spotView');
+  return;
+}
+
+    const lastSeen =
+      Number(localStorage.getItem('spotSeen')) || 0;
+
+    if (lastSeen && Date.now() - lastSeen > IDLE_MS) {
+      await db.auth.signOut();
       localStorage.removeItem('spotUser');
       localStorage.removeItem('spotView');
-    } catch (error) {}
-    return;
-  }
+      return;
+    }
 
-  // Verify user exists and restore session
-  const { data, error } = await db
-    .from('users')
-    .select('user_id')
-    .eq('user_id', savedUser)
-    .maybeSingle();
+    const id = await getSpotUser();
 
-  if (error) {
-    console.error('Could not restore login:', error.message);
-    return;
-  }
+    if (!id) {
+      await db.auth.signOut();
+      return;
+    }
 
-  if (data) {
-    await enter(data.user_id);
-    
-    // Now restore view after gym locations are loaded
+    await enter(id);
     restoreView();
-  } else {
-    try {
-      localStorage.removeItem('spotUser');
-      localStorage.removeItem('spotView');
-    } catch (error) {}
+
+    } catch (error) {
+    console.error('Could not restore login:', error);
+    S.screen = 'login';
+    S.msg = 'Please log in again.';
+    render();
+  } finally {
+    finishStartup();
   }
 })();
