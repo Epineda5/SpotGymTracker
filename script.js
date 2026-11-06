@@ -540,60 +540,55 @@ function equipmentUsageTable() {
 const V = {
 
   'gym-select': () => `
-    <section class="gym-selection-page">
-      <h1>Choose Your Gym</h1>
-      <p>Select a location before entering Spot.</p>
+  <section class="gym-selection-page">
+    <h1>Choose Your Gym</h1>
+    <p>Select a location before entering Spot.</p>
 
-      <div class="card gym-location-card">
-        <h2>Find nearby gyms</h2>
-        <p>
-          Location is optional. Allow access to sort the
-          demo gyms by distance.
-        </p>
-
-        <button type="button"
-                class="btn alt"
-                data-a="find-nearby">
-          📍 Use My Location
-        </button>
-
-        <p class="hint" role="status">${S.gymMessage}</p>
-      </div>
-
-      <div class="gym-options">
-        ${gymOptions().map(g => `
-          <button type="button"
-                  class="gym-option ${S.gymChoice === g.id ? 'chosen' : ''}"
-                  data-a="choose-gym"
-                  data-g="${g.id}"
-                  aria-pressed="${S.gymChoice === g.id}">
-
-            <span aria-hidden="true">
-              ${S.gymChoice === g.id ? '●' : '○'}
-            </span>
-
-            <span class="gym-option-details">
-              <strong>${g.name}</strong>
-              <small>Demo gym location</small>
-            </span>
-
-            <span class="gym-distance">
-              ${g.distance === null
-                ? ''
-                : g.distance.toFixed(1) + ' mi'}
-            </span>
-          </button>
-        `).join('')}
-      </div>
+    <div class="card gym-location-card">
+      <h2>Find nearby gyms</h2>
+      <p>
+        Location is optional. Allow access to sort the
+        demo gyms by distance.
+      </p>
 
       <button type="button"
-              class="btn"
-              data-a="confirm-gym"
-              ${!S.gymChoice ? 'disabled' : ''}>
-        Confirm Gym &amp; Enter Spot
+              class="btn alt"
+              data-a="find-nearby">
+        📍 Use My Location
       </button>
-    </section>
-  `,
+
+      <p class="hint" role="status">${S.gymMessage}</p>
+    </div>
+
+    <div class="gym-options">
+      ${GYM_LOCATIONS.length ? gymOptions().map(g => `
+        <button type="button"
+                class="gym-option ${S.gymChoice === g.id ? 'chosen' : ''}"
+                data-a="choose-gym"
+                data-g="${g.id}"
+                aria-pressed="${S.gymChoice === g.id}">
+
+          <span aria-hidden="true">
+            ${S.gymChoice === g.id ? '●' : '○'}
+          </span>
+
+          <span class="gym-option-details">
+            <strong>${g.name}</strong>
+            ${g.distance !== null ? `<span class="gym-distance">${g.distance.toFixed(1)} mi</span>` : ''}
+          </span>
+        </button>
+      `).join('') : '<p class="hint">Loading gyms...</p>'}
+    </div>
+
+    <button type="button"
+            class="btn"
+            data-a="confirm-gym"
+            ${!S.gymChoice ? 'disabled' : ''}>
+      Confirm Gym &amp; Enter Spot
+    </button>
+  </section>
+`,
+
 
   login: () => {
     const su = S.mode === 'signup';
@@ -2154,7 +2149,8 @@ function restoreView() {
     'groups',
     'map',
     'detail',
-    'mylists'
+    'mylists',
+    'gym-select'
   ];
 
   if (!allowed.includes(saved.screen)) {
@@ -2196,8 +2192,6 @@ document.addEventListener('visibilitychange', () => {
 // INITIALIZE APPLICATION
 // ========================================
 
-render();
-
 // ========================================
 // INITIALIZE APPLICATION
 // ========================================
@@ -2209,6 +2203,7 @@ render();  // Render login screen initially
   try {
     await loadGymLocations();
     console.log('Gym locations loaded successfully');
+    console.log('Available gyms:', GYM_LOCATIONS.length);
   } catch (error) {
     console.error('Failed to load gym locations:', error);
     toast('Failed to load gym locations');
@@ -2269,4 +2264,3 @@ render();  // Render login screen initially
     } catch (error) {}
   }
 })();
-
