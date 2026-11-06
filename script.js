@@ -146,13 +146,42 @@ try {
 // coordinates for class project testing.
 // ========================================
 
-const GYM_LOCATIONS = [
-  { id: 'provo', name: 'Provo', lat: 40.2338, lng: -111.6585 },
-  { id: 'orem', name: 'Orem', lat: 40.2969, lng: -111.6946 },
-  { id: 'lehi', name: 'Lehi', lat: 40.3916, lng: -111.8508 },
-  { id: 'american-fork', name: 'American Fork', lat: 40.3769, lng: -111.7958 },
-  { id: 'salt-lake-city', name: 'Salt Lake City', lat: 40.7608, lng: -111.8910 }
-];
+// ========================================
+// GYM LOCATIONS - DATABASE
+// ========================================
+
+let GYM_LOCATIONS = []; // Changed from const to let for dynamic loading
+
+async function loadGymLocations() {
+  const { data, error } = await db
+    .from('gym_locations')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    console.error('Error loading gym locations:', error);
+    toast('Failed to load gym locations');
+    return;
+  }
+
+  if (data && data.length) {
+    GYM_LOCATIONS = data;
+    console.log('Loaded', GYM_LOCATIONS.length, 'gym locations from database');
+  } else {
+    // Fallback to empty array if no data
+    GYM_LOCATIONS = [];
+    toast('No gym locations found in database');
+  }
+}
+
+// Initialize: Load gyms when app starts
+(async () => {
+  await loadGymLocations();
+  
+  // Continue with normal initialization
+  // ... existing code below
+})();
+
 
 function distanceMiles(lat1, lng1, lat2, lng2) {
   const r = Math.PI / 180;
@@ -2172,6 +2201,17 @@ render();
 
 (async () => {
   let savedUser = null;
+
+   await loadGymLocations();
+
+  // Then proceed with normal initialization
+  let savedUser = null;
+
+  try {
+    savedUser = localStorage.getItem('spotUser');
+  } catch (error) {}
+
+  if (!savedUser) return;
 
   try {
     savedUser = localStorage.getItem('spotUser');
