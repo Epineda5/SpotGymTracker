@@ -385,3 +385,186 @@ input,
   border-radius: 8px;
   padding: 8px 12px;
 }
+
+
+/* Photo Card Gym Selection */
+
+.spot-gym-page {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.gym-page-intro {
+  text-align: center;
+  margin: 8px 0 22px;
+}
+
+.gym-page-intro p {
+  color: var(--muted);
+}
+
+.gym-nearby-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.gym-nearby-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gym-nearby-copy span,
+.gym-nearby-copy small {
+  color: var(--muted);
+}
+
+.gym-location-action {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--brand);
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.gym-location-message {
+  min-height: 1.4em;
+  margin: 8px 2px 12px;
+}
+
+.gym-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gym-photo-card {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  text-align: left;
+  min-height: 155px;
+  padding: 15px;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  color: white;
+  background-color: #29445c;
+  background-size: cover;
+  background-position: center;
+}
+
+.gym-photo-card:hover {
+  transform: translateY(-2px);
+  border-color: #83aee7;
+}
+
+.gym-photo-card.chosen {
+  border-color: #f2c230;
+  box-shadow: 0 0 0 2px rgba(242, 194, 48, .2);
+}
+
+.gym-photo-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-shadow: 0 1px 4px black;
+}
+
+.gym-photo-info strong {
+  font-size: 1.2rem;
+}
+
+.gym-photo-info small {
+  color: #e0e9f1;
+}
+
+.gym-photo-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #2876e2;
+  color: white;
+}
+
+.gym-photo-card.chosen .gym-photo-check {
+  display: grid;
+}
+
+.gym-confirm-button {
+  margin-top: 18px;
+  background: #286bd1;
+}
+
+.gym-confirm-button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* Photo backgrounds */
+
+.gym-photo-salt-lake-city {
+  background-image:
+    linear-gradient(transparent, rgba(2,12,23,.9)),
+    url('https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=900&q=80');
+}
+
+.gym-photo-provo {
+  background-image:
+    linear-gradient(transparent, rgba(2,12,23,.9)),
+    url('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=900&q=80');
+}
+
+.gym-photo-orem {
+  background-image:
+    linear-gradient(transparent, rgba(2,12,23,.9)),
+    url('https://images.unsplash.com/photo-1500534623283-312aade485b7?w=900&q=80');
+}
+
+.gym-photo-lehi {
+  background-image:
+    linear-gradient(transparent, rgba(2,12,23,.9)),
+    url('https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=900&q=80');
+}
+
+.gym-photo-american-fork {
+  background-image:
+    linear-gradient(transparent, rgba(2,12,23,.9)),
+    url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900&q=80');
+}
+
+@media (min-width: 750px) {
+  .gym-photo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .gym-photo-card {
+    min-height: 190px;
+  }
+}
+
+@media (max-width: 420px) {
+  .gym-nearby-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gym-photo-card {
+    min-height: 135px;
+    padding: 10px;
+  }
+}
+

@@ -199,7 +199,9 @@ function gymOptions() {
   }));
 
   if (S.gymDistances) {
-    gyms.sort((a, b) => a.distance - b.distance);
+    gyms.sort((a, b) =>
+      (a.distance ?? Infinity) - (b.distance ?? Infinity)
+    );
   } else {
     gyms.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -213,6 +215,48 @@ function resetGym() {
   S.gymDistances = null;
   S.gymMessage = '';
 }
+
+function savedGymKey() {
+  return `spotSelectedGym:${S.me}`;
+}
+
+function restoreGymChoice() {
+  if (!S.me) return;
+
+  try {
+    const savedId = localStorage.getItem(savedGymKey());
+    const gym = GYM_LOCATIONS.find(
+      g => String(g.id) === savedId
+    );
+
+    S.gymChoice = gym ? gym.id : null;
+  } catch (error) {
+    S.gymChoice = null;
+  }
+}
+
+// Check browser permission without showing a new prompt.
+async function checkExistingLocationPermission() {
+  if (
+    S.screen !== 'gym-select' ||
+    !navigator.geolocation ||
+    !navigator.permissions?.query
+  ) return;
+
+  try {
+    const status = await navigator.permissions.query({
+      name: 'geolocation'
+    });
+
+    if (status.state === 'granted' &&
+        S.screen === 'gym-select') {
+      findNearbyGyms();
+    }
+  } catch (error) {
+    // Users can still select gyms manually.
+  }
+}
+
 
 function gymHeader() {
   const header = $('#selected-gym');
@@ -539,54 +583,58 @@ function equipmentUsageTable() {
 
 const V = {
 
-  'gym-select': () => `
-  <section class="gym-selection-page">
+  
+'gym-select': () => `
+<section class="gym-selection-page spot-gym-page">
+  <div class="gym-page-intro">
     <h1>Choose Your Gym</h1>
-    <p>Select a location before entering Spot.</p>
+    <p>Select a gym to continue. Sharing your location is optional.</p>
+  </div>
 
-    <div class="card gym-location-card">
-      <h2>Find nearby gyms</h2>
-      <p>
-        Location is optional. Allow access to sort the
-        demo gyms by distance.
-      </p>
-
-      <button type="button"
-              class="btn alt"
-              data-a="find-nearby">
-        📍 Use My Location
-      </button>
-
-      <p class="hint" role="status">${S.gymMessage}</p>
+  <div class="gym-nearby-bar">
+    <div class="gym-nearby-copy">
+      <strong>Find nearby gyms <span>(Optional)</span></strong>
+      <small>Use your location to sort gyms by distance.</small>
     </div>
-
-    <div class="gym-options">
-      ${GYM_LOCATIONS.length ? gymOptions().map(g => `
-        <button type="button"
-                class="gym-option ${S.gymChoice === g.id ? 'chosen' : ''}"
-                data-a="choose-gym"
-                data-g="${g.id}"
-                aria-pressed="${S.gymChoice === g.id}">
-
-          <span aria-hidden="true">
-            ${S.gymChoice === g.id ? '●' : '○'}
-          </span>
-
-          <span class="gym-option-details">
-            <strong>${g.name}</strong>
-            ${g.distance !== null ? `<span class="gym-distance">${g.distance.toFixed(1)} mi</span>` : ''}
-          </span>
-        </button>
-      `).join('') : '<p class="hint">Loading gyms...</p>'}
-    </div>
-
-    <button type="button"
-            class="btn"
-            data-a="confirm-gym"
-            ${!S.gymChoice ? 'disabled' : ''}>
-      Confirm Gym &amp; Enter Spot
+    <button type="button" class="gym-location-action"
+            data-a="find-nearby">
+      Use My Location
     </button>
-  </section>
+  </div>
+
+  <p class="hint gym-location-message" role="status">
+    ${S.gymMessage}
+  </p>
+
+  <div class="gym-photo-grid">
+    ${GYM_LOCATIONS.length ? gymOptions().map(g => `
+      <button type="button"
+        class="gym-photo-card gym-photo-${String(g.name).toLowerCase().replace(/[^a-z]+/g, '-')} ${String(S.gymChoice) === String(g.id) ? 'chosen' : ''}"
+        data-a="choose-gym"
+        data-g="${g.id}"
+        aria-pressed="${String(S.gymChoice) === String(g.id)}">
+
+        <span class="gym-photo-check" aria-hidden="true">✓</span>
+
+        <span class="gym-photo-info">
+          <strong>⌖ ${g.name}</strong>
+          <small>
+            ${g.distance !== null && Number.isFinite(g.distance)
+              ? `${g.distance.toFixed(1)} mi away`
+              : 'Select this gym'}
+          </small>
+        </span>
+      </button>
+    `).join('') : '<p class="hint">Loading gyms...</p>'}
+  </div>
+
+  <button type="button"
+    class="btn gym-confirm-button"
+    data-a="confirm-gym"
+    ${!S.gymChoice ? 'disabled' : ''}>
+    Confirm Gym &amp; Enter Spot →
+  </button>
+</section>
 `,
 
 
@@ -1328,6 +1376,7 @@ async function enter(id) {
   await load();
   derive();
   resetGym();
+  restoreGymChoice();
 
   S.screen = S.email === ADMIN_EMAIL
     ? 'admin'
@@ -1336,6 +1385,10 @@ async function enter(id) {
   S.stack = [];
 
   render();
+
+  if (S.screen === 'gym-select') {
+    checkExistingLocationPermission();
+  }
 
   if (S.screen === 'admin') {
     loadUsageStats();
@@ -1714,7 +1767,11 @@ if (b.id === 'notification-toggle') {
   }
 
   if (a === 'choose-gym' && S.screen === 'gym-select') {
-    S.gymChoice = b.dataset.g;
+    const chosen = GYM_LOCATIONS.find(
+      g => String(g.id) === b.dataset.g
+    );
+  
+    S.gymChoice = chosen?.id ?? null;
     render();
     return;
   }
@@ -1725,12 +1782,17 @@ if (b.id === 'notification-toggle') {
     !S.gym
   ) {
     const gym = GYM_LOCATIONS.find(
-      g => g.id === S.gymChoice
+      g => String(g.id) === String(S.gymChoice)
     );
 
     if (!gym) return;
 
     S.gym = gym;
+    try {
+      localStorage.setItem(savedGymKey(), String(gym.id));
+    } catch (error) {
+      console.error('Could not save gym preference:', error);
+    }
     S.screen = 'find';
     S.stack = [];
     S.msg = '';
