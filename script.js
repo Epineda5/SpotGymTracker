@@ -75,6 +75,270 @@ const ADMIN_EMAIL = 'adminchris@example.com';
 let E = [];
 let RAW = { eq: [], wl: [], se: [] };
 let busy = false;
+// Up next state is restored from Supabase, not localStorage.
+let upNextState = {
+  selection: null,
+  interest_counts: [],
+  waitlists: []
+};
+
+let upNextReady = false;
+let spotServerOffset = 0;
+
+function resetUpNextState() {
+  upNextState = {
+    selection: null,
+    interest_counts: [],
+    waitlists: []
+  };
+
+  upNextReady = false;
+  spotServerOffset = 0;
+}
+let equipmentActionPending = false;
+let equipmentSyncPromise = null;
+
+function applyEquipmentState(data) {
+  if (!data || !Number.isFinite(Date.parse(data.server_time))) {
+    throw new Error('Supabase returned an invalid equipment response.');
+  }
+
+  const previous = upNextState.selection;
+
+  upNextState = data;
+  spotServerOffset = Date.parse(data.server_time) - Date.now();
+  upNextReady = true;
+
+  const converted = previous && data.waitlists?.find(row =>
+    row.equipment_id === previous.equipment_id &&
+    row.from_up_next
+  );
+
+  if (converted) {
+    toast(
+      previous.equipment_name +
+      ' is now a waitlist spot. You are #' +
+      converted.position + ' in line.'
+    );
+  }
+}
+
+const spotText = value => String(value ?? '').replace(
+  /[&<>"']/g,
+  character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]
+);
+
+function upNextPanelContents() {
+  if (
+    !upNextReady ||
+    !S.me ||
+    ['login', 'gym-select', 'admin'].includes(S.screen)
+  ) return '';
+
+  const pending = upNextState.selection;
+  let html = '';
+
+  if (pending) {
+    html += `
+      <div class="card">
+        <h3>Up next: ${spotText(pending.equipment_name)}</h3>
+
+        <p>
+          This machine is open.
+          Other people can still start using it.
+        </p>
+
+        ${pending.people_ahead > 0 ? `
+          <p class="hint">
+            ${pending.people_ahead} earlier Up next
+            selection${pending.people_ahead === 1 ? '' : 's'}.
+          </p>
+        ` : ''}
+
+        <button class="btn alt" data-a="clear-next">
+          Clear Up next
+        </button>
+      </div>
+    `;
+  }
+
+  for (const equipment of E) {
+    const row = equipment.rows.find(item =>
+      item.user_id === S.me
+    );
+
+    if (!row) continue;
+
+    const ready =
+      equipment.status === 'reserved' &&
+      equipment.rows[0]?.user_id === S.me &&
+      equipment.claimLeft > 0;
+
+    if (!row.from_up_next && !ready) continue;
+
+    let message;
+
+    if (ready) {
+      message =
+        'Ready now — ' + fmt(equipment.claimLeft) +
+        ' left to claim. Forfeit if you want to finish your current workout.';
+    } else if (equipment.status === 'inuse') {
+      message =
+        'Current session ends in ' + fmt(equipment.rem) +
+        '. It may finish early. Be ready to claim it when it is your turn.';
+    } else {
+      message =
+        'Waiting for the person ahead of you to claim or forfeit.';
+    }
+
+    html += `
+      <div class="card">
+        <h3>
+          ${ready ? 'Your turn' : 'Queued next'}:
+          ${spotText(equipment.name)}
+        </h3>
+
+        <p>
+          You are #${row.position} in line.
+          ${spotText(message)}
+        </p>
+
+        ${ready ? `
+          <button class="btn"
+                  data-a="show-claim"
+                  data-id="${equipment.id}">
+            Choose this machine
+          </button>
+        ` : ''}
+
+        <button class="btn alt"
+                data-a="cancel"
+                data-id="${equipment.id}">
+          Forfeit this spot
+        </button>
+      </div>
+    `;
+  }
+
+  return html;
+}
+
+function upNextPanel() {
+  return '<div id="spot-up-next">' +
+    upNextPanelContents() + '</div>';
+}
+
+function updateUpNextPanel() {
+  const panel = $('#spot-up-next');
+  if (!panel) return;
+
+  const html = upNextPanelContents();
+  if (panel.innerHTML === html) return;
+
+  const focused = document.activeElement;
+  const action = panel.contains(focused)
+    ? focused.dataset.a
+    : null;
+  const id = action ? focused.dataset.id : null;
+
+  panel.innerHTML = html;
+
+  if (action) {
+    [...panel.querySelectorAll('button')].find(button =>
+      button.dataset.a === action &&
+      button.dataset.id === id
+    )?.focus({ preventScroll: true });
+  }
+}
+
+function updateEquipmentButtons() {
+  for (const button of app.querySelectorAll('button[data-a]')) {
+    if ([
+      'set-next', 'clear-next', 'start', 'finish',
+      'join', 'cancel', 'claim'
+    ].includes(button.dataset.a)) {
+      button.disabled = equipmentActionPending;
+    }
+  }
+
+  const checkoutButton = $('#co-yes');
+
+  if (checkoutButton) {
+    checkoutButton.disabled = equipmentActionPending;
+  }
+}
+
+async function runEquipmentAction(
+  action,
+  equipment = null,
+  finish = false
+) {
+  if (equipmentActionPending) return false;
+
+  if (!upNextReady) {
+    toast('Use a verified account to access Up next.');
+    return false;
+  }
+
+  const owner = S.me;
+  const minutes = S.mins;
+
+  equipmentActionPending = true;
+  S.msg = '';
+  updateEquipmentButtons();
+
+  try {
+    if (equipmentSyncPromise) await equipmentSyncPromise;
+    if (S.me !== owner) return false;
+
+    const { data, error } = await db.rpc('spot_equipment_action', {
+      p_action: action,
+      p_equipment: equipment,
+      p_minutes: minutes,
+      p_finish_current: finish
+    });
+
+    if (error) throw error;
+    if (S.me !== owner) return false;
+
+    applyEquipmentState(data);
+    await sync();
+
+    return true;
+  } catch (error) {
+    if (S.me === owner) {
+      S.msg = error.message;
+      toast(error.message);
+      await sync().catch(console.error);
+    }
+
+    return false;
+  } finally {
+    equipmentActionPending = false;
+    if (S.me === owner) render();
+  }
+}
+
+async function refreshEquipmentState() {
+  const owner = S.me;
+  if (!owner) return false;
+
+  const { data, error } = await db.rpc('spot_equipment_action', {
+    p_action: 'get'
+  });
+
+  if (error) throw error;
+  if (S.me !== owner) return false;
+
+  applyEquipmentState(data);
+  return true;
+}
 
 const GROUPS = [
   'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Cardio'
@@ -425,7 +689,9 @@ applyTheme();
 // HELPERS
 // ========================================
 
-const vnow = () => Date.now() + S.warp;
+const vnow = () => Date.now() + (
+  upNextReady ? spotServerOffset : S.warp
+);
 const iso = time => new Date(time).toISOString();
 
 const fmt = seconds => {
@@ -940,8 +1206,8 @@ profile: () => `
 
       <p class="hint">
         Tap a machine to see its wait.
-        You are on ${mine().length} of ${MAXLISTS} waitlists.
-      </p>
+        You have ${mine().length + (upNextState.selection ? 1 : 0)}
+        of ${MAXLISTS} waitlist / Up next spots.      </p>
 
       ${list.length
         ? `<div class="floor">${list.map(tile).join('')}</div>`
@@ -962,11 +1228,32 @@ profile: () => `
     let action = '';
 
     if (e.status === 'available') {
-      action = `
-        <p>Choose your session length, then start.</p>
-        ${mins()}
-        <button class="btn" data-a="start">Start using</button>
-      `;
+      if (using()) {
+        action = upNextReady ? `
+          <p>
+            This machine stays open for others
+            until someone starts using it.
+          </p>
+
+          <button class="btn"
+                  data-a="${upNextState.selection?.equipment_id === e.id
+                    ? 'clear-next' : 'set-next'}"
+                  data-id="${e.id}">
+            ${upNextState.selection?.equipment_id === e.id
+              ? 'Clear Up next' : 'Set as Up next'}
+          </button>
+        ` : `
+          <p>
+            Sign in with a verified account to select Up next.
+          </p>
+        `;
+      } else {
+        action = `
+          <p>Choose your session length, then start.</p>
+          ${mins()}
+          <button class="btn" data-a="start">Start using</button>
+        `;
+      }
     } else if (e.by === 'You') {
       action = `
         <p>You are using this machine right now.</p>
@@ -1131,7 +1418,9 @@ profile: () => `
           : ''}
 
         <button class="btn" data-a="claim">
-          Claim equipment
+          ${using()
+            ? 'Finish current workout and claim'
+            : 'Claim equipment'}
         </button>
 
         <button class="btn danger"
@@ -1195,26 +1484,47 @@ function derive() {
 }
 
 async function load() {
-  const [a, b, c] = await Promise.all([
-    db.from('equipment').select('*').order('equipment_id'),
-    db.from('waitlist').select('*').order('position'),
-    db.from('equipment_session').select('*')
-  ]);
+  const owner = S.me;
 
-  const error = a.error || b.error || c.error;
+  try {
+    if (owner) {
+      const { data, error } = await db.auth.getSession();
 
-  if (error) {
-    toast('Database error: ' + error.message);
+      if (error) throw error;
+      if (S.me !== owner) return false;
+
+      if (data.session) {
+        if (!await refreshEquipmentState()) return false;
+      } else {
+        // Keep the existing localhost legacy-login behavior.
+        resetUpNextState();
+      }
+    }
+
+    const [a, b, c] = await Promise.all([
+      db.from('equipment').select('*').order('equipment_id'),
+      db.from('waitlist').select('*').order('position'),
+      db.from('equipment_session').select('*')
+    ]);
+
+    if (S.me !== owner) return false;
+
+    const error = a.error || b.error || c.error;
+    if (error) throw error;
+
+    RAW = {
+      eq: a.data || [],
+      wl: b.data || [],
+      se: c.data || []
+    };
+
+    return true;
+  } catch (error) {
+    console.error('Equipment loading failed:', error);
+    toast('Could not update equipment: ' + error.message);
+
     return false;
   }
-
-  RAW = {
-    eq: a.data || [],
-    wl: b.data || [],
-    se: c.data || []
-  };
-
-  return true;
 }
 
 async function loadUsageStats() {
@@ -1241,6 +1551,10 @@ async function loadUsageStats() {
 }
 
 async function compact(eid) {
+    if (upNextReady) {
+      await refreshEquipmentState();
+      return;
+    }
   const { data, error } = await db
     .from('waitlist')
     .select('waitlist_id,position')
@@ -1264,6 +1578,7 @@ async function compact(eid) {
 }
 
 async function maintain() {
+  if (upNextReady) return;
   if (busy) return;
 
   busy = true;
@@ -1326,67 +1641,65 @@ async function maintain() {
 
 async function sync() {
   if (!S.me) return;
+  if (equipmentSyncPromise) return equipmentSyncPromise;
 
-  if (await load()) {
-    derive();
-    await maintain();
-    checkWaitlistNotifications();
-  }
+  const owner = S.me;
 
-  view();
+  equipmentSyncPromise = (async () => {
+    if (await load() && S.me === owner) {
+      derive();
+      await maintain();
+      checkWaitlistNotifications();
+    }
+
+    if (S.me === owner) view();
+  })().finally(() => {
+    equipmentSyncPromise = null;
+  });
+
+  return equipmentSyncPromise;
 }
 
 function view() {
-  if (S.screen === 'gym-select') return;
+  if (
+    S.screen === 'gym-select' ||
+    S.screen === 'login'
+  ) return;
 
-  const turn = E.find(e =>
+  const turns = E.filter(e =>
     e.status === 'reserved' &&
-    e.queue[0] === 'You'
+    e.rows[0]?.user_id === S.me &&
+    e.claimLeft > 0
   );
 
-  
-if (
-  turn &&
-  !S.claim &&
-  S.screen !== 'login'
-) {
-  S.claim = turn.id;
+  const currentClaim = turns.find(e => e.id === S.claim);
 
-  if (S.screen !== 'claim') {
-    S.stack.push(S.screen);
-    S.screen = 'claim';
-    toast(turn.name + ' is ready. Claim it now.');
-  }
-} else if (!turn && S.claim) {
-  S.claim = null;
+  if (!currentClaim) {
+    S.claim = turns[0]?.id ?? null;
 
-  if (S.screen === 'claim') {
-    S.screen = 'map';
-    S.stack = ['find'];
-    S.msg = '';
-  }
-}
+    if (S.claim && S.screen !== 'admin') {
+      if (S.screen !== 'claim') {
+        S.stack.push(S.screen);
+      }
 
-
-  
-if (S.screen === 'claim' && app.querySelector('.claim-card')) {
-  const timer = app.querySelector('.claim-card .big');
-  const equipment = get(S.claim);
-
-  if (timer && equipment) {
-    timer.textContent = fmt(equipment.claimLeft);
+      S.screen = 'claim';
+      toast(get(S.claim).name + ' is ready. Claim it now.');
+    } else if (S.screen === 'claim') {
+      S.screen = 'map';
+      S.stack = ['find'];
+      S.msg = '';
+    }
   }
 
-  return;
-}
+  if (!['find', 'groups', 'profile'].includes(S.screen)) {
+    const y = window.scrollY;
 
-if (!['find', 'groups', 'login', 'profile'].includes(S.screen)) {
-  const y = window.scrollY;
-  render();
-  window.scrollTo(0, y);
-}
-
-
+    render();
+    window.scrollTo(0, y);
+  } else {
+    updateUpNextPanel();
+    updateEquipmentButtons();
+  }
 }
 
 // ========================================
@@ -1593,10 +1906,12 @@ function render() {
 
   app.innerHTML =
     banner() +
+    upNextPanel() +
     V[S.screen]() +
     (S.screen === 'admin' ? equipmentUsageTable() : '');
-
+    
   gymHeader();
+  updateEquipmentButtons();
 
   if (inApp && key) {
     const match = [...app.querySelectorAll(focused.tagName)]
@@ -1659,6 +1974,7 @@ if (notificationWrap) {
 // ========================================
 
 async function enter(id) {
+  resetUpNextState();
   try {
     localStorage.setItem('spotUser', String(id));
   } catch (error) {}
@@ -2055,6 +2371,17 @@ document.addEventListener('click', async ev => {
   const b = ev.target.closest('button');
   if (!b) return;
 
+  if (
+    equipmentActionPending &&
+    (
+      b.id === 'co-yes' ||
+      [
+        'set-next', 'clear-next', 'start', 'finish',
+        'join', 'cancel', 'claim'
+      ].includes(b.dataset.a)
+    )
+  ) return;
+
 
 if (b.id === 'notification-toggle') {
   const panel = $('#notification-panel');
@@ -2288,6 +2615,11 @@ if (b.id === 'profile-password-save') {
   }
 
   if (b.id === 'co-yes') {
+    if (
+      upNextReady &&
+      !await runEquipmentAction('clear')
+    ) return;
+
     $('#modal').hidden = true;
 
     for (const x of E) {
@@ -2328,6 +2660,12 @@ if (b.id === 'profile-password-save') {
     } catch (error) {}
 
     S.me = null;
+
+    resetUpNextState();
+    spotNotifications.length = 0;
+    notifiedTurns.clear();
+    renderSpotNotifications();
+
     S.name = '';
     S.email = '';
     S.claim = null;
@@ -2366,6 +2704,97 @@ if (b.id === 'profile-password-save') {
     : null;
 
   if (!a) return;
+    if (a === 'show-claim') {
+    if (
+      e?.status === 'reserved' &&
+      e.rows[0]?.user_id === S.me &&
+      e.claimLeft > 0
+    ) {
+      S.claim = e.id;
+      go('claim');
+    }
+
+    return;
+  }
+
+  if (a === 'set-next' || a === 'clear-next') {
+    if (
+      a === 'set-next' &&
+      upNextState.selection &&
+      upNextState.selection.equipment_id !== e?.id &&
+      !window.confirm('Replace your current Up next selection?')
+    ) return;
+
+    const ok = await runEquipmentAction(
+      a === 'set-next' ? 'set' : 'clear',
+      e?.id ?? null
+    );
+
+    if (ok) {
+      toast(a === 'set-next'
+        ? 'Up next selected. This machine stays open for others.'
+        : 'Up next cleared.');
+    }
+
+    return;
+  }
+
+  if (
+    upNextReady &&
+    ['start', 'finish', 'join', 'cancel', 'claim'].includes(a)
+  ) {
+    const id = a === 'claim'
+      ? S.claim
+      : ['start', 'join'].includes(a)
+        ? S.sel
+        : e?.id;
+
+    if (!id) return;
+
+    const current = using();
+    const finishCurrent =
+      a === 'claim' && Boolean(current);
+
+    if (
+      finishCurrent &&
+      !window.confirm(
+        'Finish your workout on ' + current.name +
+        ' and claim ' + get(id)?.name + '?'
+      )
+    ) return;
+
+    const action = a === 'claim'
+      ? 'start'
+      : a === 'cancel'
+        ? 'leave'
+        : a;
+
+    const ok = await runEquipmentAction(
+      action,
+      id,
+      finishCurrent
+    );
+
+    if (!ok) return;
+
+    if (a === 'start' || a === 'claim') {
+      S.claim = null;
+      S.sel = id;
+      S.screen = 'detail';
+      S.stack = ['find', 'map'];
+
+      toast('Your session timer has started.');
+    } else if (a === 'join') {
+      go('mylists');
+    } else if (a === 'finish') {
+      toast('Session finished.');
+    } else {
+      toast('Your spot was removed. Your current workout continues.');
+    }
+
+    render();
+    return;
+  }
 
   // GYM SELECTION ACTIONS
 
@@ -2652,8 +3081,12 @@ setInterval(() => {
 let syncRunning = false;
 
 async function fastSync() {
-  if (!S.me || syncRunning || document.hidden) return;
-
+  if (
+    !S.me ||
+    syncRunning ||
+    equipmentActionPending ||
+    document.hidden
+  ) return;
   syncRunning = true;
 
   try {
@@ -2715,13 +3148,18 @@ setInterval(async () => {
     !S.me ||
     Date.now() - lastTouch < IDLE_MS ||
     using() ||
-    mine().length
+    mine().length ||
+    upNextState.selection
   ) {
     return;
   }
 
   const id = S.me;
   S.me = null;
+  resetUpNextState();
+  spotNotifications.length = 0;
+  notifiedTurns.clear();
+  renderSpotNotifications();
   await db.auth.signOut();
 
   await db.from('users')
