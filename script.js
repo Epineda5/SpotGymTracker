@@ -82,6 +82,8 @@ const GROUPS = [
 
 const S = {
   screen: 'login',
+  avatarUrl: null,
+  notificationsEnabled: true,
   stack: [],
   me: null,
   checked: true,
@@ -111,7 +113,7 @@ const spotNotifications = [];
 const notifiedTurns = new Set();
 
 function checkWaitlistNotifications() {
-  if (!S.me) return;
+  if (!S.me || !S.notificationsEnabled) return;
 
   for (const e of E) {
     const first = e.rows?.[0];
@@ -481,6 +483,11 @@ function go(screen, push = true) {
   S.msg = '';
 
   render();
+
+  if (screen === 'profile') {
+    loadSpotProfile();
+  }
+
   window.scrollTo(0, 0);
 }
 
@@ -646,6 +653,78 @@ function equipmentUsageTable() {
 // ========================================
 
 const V = {
+
+
+profile: () => `
+  <section class="profile-page">
+    <h1>My Profile</h1>
+    <p class="hint">Manage your Spot account and preferences.</p>
+
+    <div class="card">
+      <h2>Profile Information</h2>
+
+      <div class="profile-avatar-section">
+        <div id="profile-avatar-preview" class="profile-avatar">?</div>
+        <input type="file" id="profile-picture"
+               accept="image/png,image/jpeg,image/webp">
+      </div>
+
+      <label for="profile-username">Username</label>
+      <input id="profile-username" placeholder="Username">
+
+      <label for="profile-first">First Name</label>
+      <input id="profile-first" placeholder="First name">
+
+      <label for="profile-last">Last Name</label>
+      <input id="profile-last" placeholder="Last name">
+
+      <label for="profile-dob">Date of Birth</label>
+      <input id="profile-dob" type="date">
+
+      <button class="btn" id="profile-save">
+        Save Profile
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Account & Security</h2>
+
+      <label for="profile-email">Email Address</label>
+      <input id="profile-email" type="email">
+
+      <button class="btn alt" id="profile-email-save">
+        Update Email
+      </button>
+
+      <h3 style="margin-top:24px">Change Password</h3>
+
+      <label for="profile-password">New Password</label>
+      <input id="profile-password" type="password"
+             autocomplete="new-password">
+
+      <label for="profile-password-confirm">
+        Confirm New Password
+      </label>
+      <input id="profile-password-confirm" type="password"
+             autocomplete="new-password">
+
+      <button class="btn alt" id="profile-password-save">
+        Change Password
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Preferences</h2>
+
+      <label>
+        <input type="checkbox" id="profile-notifications"
+               style="width:auto;min-height:0">
+        Enable Notifications
+      </label>
+    </div>
+  </section>
+`,
+
 
   
 'gym-select': () => `
@@ -1301,17 +1380,198 @@ if (S.screen === 'claim' && app.querySelector('.claim-card')) {
   return;
 }
 
-if (!['find', 'groups', 'login'].includes(S.screen)) {
+if (!['find', 'groups', 'login', 'profile'].includes(S.screen)) {
   const y = window.scrollY;
   render();
   window.scrollTo(0, y);
 }
+
 
 }
 
 // ========================================
 // RENDER
 // ========================================
+
+
+function updateSpotMenuAvatar() {
+  const avatar = $('#menu-avatar');
+  if (!avatar) return;
+
+  if (S.avatarUrl) {
+    avatar.textContent = '';
+    avatar.style.backgroundImage = `url("${S.avatarUrl}")`;
+    avatar.style.backgroundSize = 'cover';
+    avatar.style.backgroundPosition = 'center';
+    avatar.style.backgroundRepeat = 'no-repeat';
+  } else {
+    avatar.style.backgroundImage = 'none';
+    avatar.textContent = (S.name || '?').charAt(0).toUpperCase();
+  }
+}
+
+
+async function uploadSpotProfilePicture(file) {
+  if (!file) return;
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  if (!allowedTypes.includes(file.type)) {
+    toast('Please choose a JPG, PNG, or WebP image.');
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    toast('Profile pictures must be under 5 MB.');
+    return;
+  }
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Please sign in again.');
+
+    const userId = authData.user.id;
+    const extension = file.type === 'image/png'
+      ? 'png'
+      : file.type === 'image/webp'
+        ? 'webp'
+        : 'jpg';
+
+    const filePath = `${userId}/${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await db.storage
+      .from('profile-pictures')
+      .upload(filePath, file, {
+        contentType: file.type,
+        upsert: false
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = db.storage
+      .from('profile-pictures')
+      .getPublicUrl(filePath);
+
+    const imageUrl = urlData.publicUrl;
+
+    const { data: updatedUser, error: saveError } = await db
+      .from('users')
+      .update({ avatar_url: imageUrl })
+      .eq('auth_user_id', userId)
+      .select('user_id')
+      .single();
+
+    if (saveError) throw saveError;
+    if (!updatedUser) throw new Error('Could not save picture.');
+
+    const avatar = $('#profile-avatar-preview');
+
+    if (avatar) {
+      avatar.textContent = '';
+      avatar.style.backgroundImage = `url("${imageUrl}")`;
+      avatar.style.backgroundSize = 'cover';
+      avatar.style.backgroundPosition = 'center';
+    }
+
+    S.avatarUrl = imageUrl;
+    updateSpotMenuAvatar();
+
+    toast('Profile picture saved!');
+
+  } catch (error) {
+    console.error('Profile picture error:', error);
+    toast('Picture upload failed: ' + error.message);
+  }
+}
+
+async function loadSpotProfile() {
+  if (S.screen !== 'profile') return;
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+    
+if (!authData.user) {
+  toast('Please sign in to view your profile.');
+  return;
+}
+
+// Fill email immediately from Supabase Auth
+const emailInput = $('#profile-email');
+
+if (emailInput) {
+  emailInput.value = authData.user.email || '';
+}
+
+// Make sure the Auth account is linked to a Spot user
+const spotUserId = await getSpotUser();
+
+if (!spotUserId) {
+  throw new Error('Could not find your Spot account.');
+}
+
+  const { data: profile, error } = await db
+      .from('users')
+      .select(`
+        username,
+        first_name,
+        last_name,
+        date_of_birth,
+        avatar_url,
+        notifications_enabled
+      `)
+      .eq('user_id', spotUserId)
+      .single();
+
+    if (error) throw error;
+    if (S.screen !== 'profile') return;
+
+    
+    const defaultUsername = (authData.user.email || '').split('@')[0];
+
+    $('#profile-username').value = profile.username || defaultUsername;
+    $('#profile-first').value = profile.first_name || '';
+    $('#profile-last').value = profile.last_name || '';
+    $('#profile-dob').value = profile.date_of_birth || '';
+    $('#profile-email').value = authData.user.email || '';
+
+    S.notificationsEnabled =
+      profile.notifications_enabled !== false;
+
+    $('#profile-notifications').checked = S.notificationsEnabled;
+    
+    const avatar = $('#profile-avatar-preview');
+
+    if (avatar) {
+      if (profile.avatar_url) {
+      avatar.textContent = '';
+      avatar.style.backgroundImage =
+        `url("${profile.avatar_url}")`;
+      avatar.style.backgroundSize = 'cover';
+      avatar.style.backgroundPosition = 'center';
+      } else {
+        avatar.style.backgroundImage = 'none';
+        avatar.textContent = (
+          profile.first_name ||
+          profile.username ||
+          authData.user.email ||
+          '?'
+        ).charAt(0).toUpperCase();
+      }
+}
+
+
+  } catch (error) {
+    console.error('Profile loading error:', error);
+    toast('Could not load profile: ' + error.message);
+  }
+}
+
 
 function render() {
   if (!app || !V[S.screen]) return;
@@ -1381,14 +1641,10 @@ if (notificationWrap) {
   }
 
   const menuName = $('#menu-name');
-  const menuAvatar = $('#menu-avatar');
 
   if (menuName) menuName.textContent = S.name || 'My Account';
 
-  if (menuAvatar) {
-    menuAvatar.textContent =
-      (S.name || '?').charAt(0).toUpperCase();
-  }
+  updateSpotMenuAvatar();
 
   const brand = $('#brand') || $('.brand');
 
@@ -1428,10 +1684,16 @@ async function enter(id) {
     await db.from('check_ins').insert({ user_id: id });
   }
 
+  
   const user = await db.from('users')
-    .select('email')
+    .select('email, avatar_url, notifications_enabled')
     .eq('user_id', id)
     .maybeSingle();
+
+  S.avatarUrl = user.data?.avatar_url || null;
+
+  S.notificationsEnabled =
+  user.data?.notifications_enabled !== false;
 
   S.name = user.data?.email
     ? user.data.email.split('@')[0]
@@ -1441,6 +1703,25 @@ async function enter(id) {
   S.checked = true;
   S.msg = '';
   S.email = user.data?.email || '';
+
+  const { data: authData, error: authError } = await db.auth.getUser();
+
+if (!authError && authData.user?.email && authData.user.email_confirmed_at) {
+  const verifiedEmail = authData.user.email.toLowerCase();
+
+  const { data: updatedUser, error: syncError } = await db
+    .from('users')
+    .update({ email: verifiedEmail })
+    .eq('user_id', id)
+    .eq('auth_user_id', authData.user.id)
+    .select('user_id');
+
+  if (syncError) {
+    console.error('Email sync error:', syncError);
+  } else if (updatedUser?.length === 1) {
+    S.email = verifiedEmail;
+  }
+}
 
   await load();
   derive();
@@ -1712,6 +1993,64 @@ document.addEventListener('keydown', ev => {
 const myRow = e =>
   e.rows.find(w => w.user_id === S.me);
 
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id === 'profile-picture') {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    e.target.disabled = true;
+
+    try {
+      await uploadSpotProfilePicture(file);
+    } finally {
+      e.target.disabled = false;
+      e.target.value = '';
+    }
+  }
+});
+
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'profile-notifications') return;
+
+  const checkbox = e.target;
+  const enabled = checkbox.checked;
+
+  checkbox.disabled = true;
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Please sign in again.');
+
+    const { data, error } = await db
+      .from('users')
+      .update({ notifications_enabled: enabled })
+      .eq('auth_user_id', authData.user.id)
+      .select('user_id')
+      .single();
+
+    if (error) throw error;
+    if (!data) throw new Error('Preference was not saved.');
+    S.notificationsEnabled = enabled;
+
+    toast(enabled
+      ? 'Notifications enabled!'
+      : 'Notifications disabled!');
+
+  } catch (error) {
+    console.error('Notification preference error:', error);
+    checkbox.checked = !enabled;
+    toast('Could not save preference: ' + error.message);
+  } finally {
+    checkbox.disabled = false;
+  }
+});
+
 document.addEventListener('click', async ev => {
   const b = ev.target.closest('button');
   if (!b) return;
@@ -1757,9 +2096,163 @@ if (b.id === 'notification-toggle') {
   }
 
   if (b.id === 'profile-open') {
-    toast('Profile settings are coming next.');
+    go('profile');
     return;
   }
+
+
+if (b.id === 'profile-save') {
+  const username = $('#profile-username').value.trim();
+  const firstName = $('#profile-first').value.trim();
+  const lastName = $('#profile-last').value.trim();
+  const dob = $('#profile-dob').value;
+
+  if (!username) {
+    toast('Please enter a username.');
+    return;
+  }
+
+  b.disabled = true;
+  b.textContent = 'Saving...';
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+
+    if (!authData.user) {
+      throw new Error('Please sign in again.');
+    }
+
+    const { data, error } = await db
+      .from('users')
+      .update({
+        username: username,
+        first_name: firstName || null,
+        last_name: lastName || null,
+        date_of_birth: dob || null
+      })
+      .eq('auth_user_id', authData.user.id)
+      .select('user_id')
+      .single();
+
+    if (error) throw error;
+    if (!data) throw new Error('Profile was not updated.');
+
+    S.name = username;
+
+    const menuName = $('#menu-name');
+    if (menuName) menuName.textContent = username;
+
+    updateSpotMenuAvatar();
+
+    toast('Profile saved successfully!');
+
+  } catch (error) {
+    console.error('Profile save error:', error);
+    toast('Could not save profile: ' + error.message);
+  } finally {
+    b.disabled = false;
+    b.textContent = 'Save Profile';
+  }
+
+  return;
+}
+
+
+if (b.id === 'profile-email-save') {
+  const newEmail = $('#profile-email').value.trim().toLowerCase();
+
+  if (!newEmail) {
+    toast('Please enter an email address.');
+    return;
+  }
+
+  b.disabled = true;
+  b.textContent = 'Updating...';
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Please sign in again.');
+
+    if (newEmail === authData.user.email?.toLowerCase()) {
+      toast('That is already your email address.');
+      return;
+    }
+
+    const { error } = await db.auth.updateUser(
+      { email: newEmail },
+      {
+        emailRedirectTo:
+          window.location.origin + window.location.pathname
+      }
+    );
+
+    if (error) throw error;
+
+    toast('Check your email to confirm the change!');
+
+  } catch (error) {
+    console.error('Email update error:', error);
+    toast('Could not update email: ' + error.message);
+  } finally {
+    b.disabled = false;
+    b.textContent = 'Update Email';
+  }
+
+  return;
+}
+
+
+if (b.id === 'profile-password-save') {
+  const password = $('#profile-password').value;
+  const confirmPassword = $('#profile-password-confirm').value;
+
+  if (password.length < 6) {
+    toast('Password must be at least 6 characters.');
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    toast('Passwords do not match.');
+    return;
+  }
+
+  b.disabled = true;
+  b.textContent = 'Updating...';
+
+  try {
+    const { data: authData, error: authError } =
+      await db.auth.getUser();
+
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Please sign in again.');
+
+    const { error } = await db.auth.updateUser({
+      password: password
+    });
+
+    if (error) throw error;
+
+    $('#profile-password').value = '';
+    $('#profile-password-confirm').value = '';
+
+    toast('Password updated successfully!');
+
+  } catch (error) {
+    console.error('Password update error:', error);
+    toast('Could not update password: ' + error.message);
+  } finally {
+    b.disabled = false;
+    b.textContent = 'Change Password';
+  }
+
+  return;
+}
 
   if (b.id === 'theme-toggle') {
     currentTheme =
