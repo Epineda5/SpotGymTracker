@@ -73,7 +73,13 @@ const CLAIM = 90;
 const ADMIN_EMAIL = 'adminchris@example.com';
 
 let E = [];
-let RAW = { eq: [], wl: [], se: [] };
+let RAW = { 
+  eq: [], 
+  wl: [], 
+  se: [], 
+  gm: []  // Added for gym locations
+};
+
 let busy = false;
 // Up next state is restored from Supabase, not localStorage.
 let upNextState = {
@@ -300,6 +306,7 @@ async function runEquipmentAction(
     const { data, error } = await db.rpc('spot_equipment_action', {
       p_action: action,
       p_equipment: equipment,
+      p_gym_id: S.gym?.id,
       p_minutes: minutes,
       p_finish_current: finish
     });
@@ -330,7 +337,8 @@ async function refreshEquipmentState() {
   if (!owner) return false;
 
   const { data, error } = await db.rpc('spot_equipment_action', {
-    p_action: 'get'
+    p_action: 'get',
+    p_gym_id: S.gym?.id
   });
 
   if (error) throw error;
@@ -377,7 +385,7 @@ const spotNotifications = [];
 const notifiedTurns = new Set();
 
 function checkWaitlistNotifications() {
-  if (!S.me || !S.notificationsEnabled) return;
+  if (!S.me || !S.notificationsEnabled || !S.gym?.id) return;
 
   for (const e of E) {
     const first = e.rows?.[0];
@@ -523,40 +531,37 @@ function distanceMiles(lat1, lng1, lat2, lng2) {
 }
 
 function gymOptions() {
-  const gyms = GYM_LOCATIONS.map(g => ({
+  return GYM_LOCATIONS.map(g => ({
     ...g,
     distance: S.gymDistances?.[g.id] ?? null
   }));
-
-  if (S.gymDistances) {
-    gyms.sort((a, b) =>
-      (a.distance ?? Infinity) - (b.distance ?? Infinity)
-    );
-  } else {
-    gyms.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  return gyms;
 }
+
 
 function resetGym() {
   S.gym = null;
   S.gymChoice = null;
-  S.gymDistances = null;
+  S.gymDistances = {};
   S.gymMessage = '';
 }
 
-function savedGymKey() {
-  return `spotSelectedGym:${S.me}`;
+function saveGymKey() {
+  return `spotSelectedGym:${S.me}:${S.gym?.id || 'null'}`;
 }
+
 
 function restoreGymChoice() {
   if (!S.me) return;
 
   try {
-    const savedId = localStorage.getItem(savedGymKey());
+    const saved = localStorage.getItem(savedGymKey());
+    if (!saved) return;
+
+    const [userId, gymId] = saved.split(':');
+    if (String(userId) !== String(S.me)) return;
+
     const gym = GYM_LOCATIONS.find(
-      g => String(g.id) === savedId
+      g => String(g.id) === gymId
     );
 
     S.gymChoice = gym ? gym.id : null;
@@ -700,9 +705,12 @@ const fmt = seconds => {
     String(seconds % 60).padStart(2, '0');
 };
 
-const get = id => E.find(e => e.id === id);
+const get = (id, gymId = S.gym?.id) => 
+  E.find(e => e.id === id && (gymId ? e.gym_id === gymId : true));
 
-const mine = () => E.filter(e => e.queue.includes('You'));
+const mine = () =>
+  E.filter(e => e.queue.includes('You') && e.gym_id === S.gym?.id);
+
 
 const using = () =>
   E.find(e => e.status === 'inuse' && e.by === 'You');
@@ -1439,48 +1447,55 @@ profile: () => `
 
 function derive() {
   const now = vnow();
+  const gymId = S.gym?.id;
 
-  E = RAW.eq.map(q => {
-    const rows = RAW.wl
-      .filter(w => w.equipment_id === q.equipment_id)
-      .sort((a, b) => a.position - b.position);
+  E = RAW.eq
+    .filter(eq => gymId ? eq.gym_id === gymId : true)
+    .map(q => {
+      const rows = RAW.wl
+        .filter(w => 
+          w.equipment_id === q.equipment_id &&
+          (gymId ? w.gym_id === gymId : true)
+        )
+        .sort((a, b) => a.position - b.position);
 
-    const session = RAW.se.find(x =>
-      x.equipment_id === q.equipment_id &&
-      (!x.end_time || Date.parse(x.end_time) > now)
-    );
+      const session = RAW.se.find(x =>
+        x.equipment_id === q.equipment_id &&
+        (gymId ? x.gym_id === gymId : true) &&
+        (!x.end_time || Date.parse(x.end_time) > now)
+      );
 
-    const e = {
-      id: q.equipment_id,
-      name: q.name,
-      g: q.muscle_group,
-      rows,
-      sess: session,
-      queue: rows.map(w =>
-        w.user_id === S.me ? 'You' : 'Other'
-      )
-    };
+      const e = {
+        id: q.equipment_id,
+        gym_id: gymId,
+        name: q.name,
+        g: q.muscle_group,
+        rows,
+        sess: session,
+        queue: rows.map(w =>
+          w.user_id === S.me ? 'You' : 'Other'
+        )
+      };
 
-    if (q.status === 'unavailable') {
-      e.status = 'unavailable';
-    } else if (session) {
-      e.status = 'inuse';
-      e.rem =
-        session.duration_minutes * 60 -
-        (now - Date.parse(session.start_time)) / 1000;
-      e.by = session.user_id === S.me ? 'You' : null;
-    } else if (rows.length) {
-      e.status = 'reserved';
-      e.claimLeft = rows[0].notified_at
-        ? CLAIM -
-          (now - Date.parse(rows[0].notified_at)) / 1000
-        : CLAIM;
-    } else {
-      e.status = 'available';
-    }
-
-    return e;
-  });
+      if (q.status === 'unavailable') {
+        e.status = 'unavailable';
+      } else if (session) {
+        e.status = 'inuse';
+        e.rem =
+          session.duration_minutes * 60 -
+          (now - Date.parse(session.start_time)) / 1000;
+        e.by = session.user_id === S.me ? 'You' : null;
+      } else if (rows.length) {
+        e.status = 'reserved';
+        e.claimLeft = rows[0].notified_at
+          ? CLAIM -
+            (now - Date.parse(rows[0].notified_at)) / 1000
+          : CLAIM;
+      } else {
+        e.status = 'available';
+      }
+      return e;
+    });
 }
 
 async function load() {
@@ -1496,36 +1511,37 @@ async function load() {
       if (data.session) {
         if (!await refreshEquipmentState()) return false;
       } else {
-        // Keep the existing localhost legacy-login behavior.
         resetUpNextState();
       }
     }
 
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, d] = await Promise.all([
       db.from('equipment').select('*').order('equipment_id'),
       db.from('waitlist').select('*').order('position'),
-      db.from('equipment_session').select('*')
+      db.from('equipment_session').select('*'),
+      db.from('gym_locations').select('*').order('name')
     ]);
 
     if (S.me !== owner) return false;
 
-    const error = a.error || b.error || c.error;
+    const error = a.error || b.error || c.error || d.error;
     if (error) throw error;
 
     RAW = {
       eq: a.data || [],
       wl: b.data || [],
-      se: c.data || []
+      se: c.data || [],
+      gm: d.data || []
     };
 
     return true;
   } catch (error) {
     console.error('Equipment loading failed:', error);
     toast('Could not update equipment: ' + error.message);
-
     return false;
   }
 }
+
 
 async function loadUsageStats() {
   usageStatus = 'loading';
@@ -1580,6 +1596,7 @@ async function compact(eid) {
 async function maintain() {
   if (upNextReady) return;
   if (busy) return;
+  if (!S.gym?.id) return;
 
   busy = true;
   let changed = false;
@@ -1592,7 +1609,8 @@ async function maintain() {
             end_time: iso(
               Date.parse(e.sess.start_time) +
               e.sess.duration_minutes * 60000
-            )
+            ),
+            gym_id: e.gym_id
           })
           .eq('session_id', e.sess.session_id);
 
@@ -2000,17 +2018,13 @@ async function enter(id) {
     await db.from('check_ins').insert({ user_id: id });
   }
 
-  
   const user = await db.from('users')
-    .select('email, avatar_url, notifications_enabled')
+    .select('email, avatar_url, notifications_enabled, default_gym_id')
     .eq('user_id', id)
     .maybeSingle();
 
   S.avatarUrl = user.data?.avatar_url || null;
-
-  S.notificationsEnabled =
-  user.data?.notifications_enabled !== false;
-
+  S.notificationsEnabled = user.data?.notifications_enabled !== false;
   S.name = user.data?.email
     ? user.data.email.split('@')[0]
     : '';
@@ -2020,24 +2034,32 @@ async function enter(id) {
   S.msg = '';
   S.email = user.data?.email || '';
 
+  // Update default gym if stored
+  if (user.data?.default_gym_id) {
+    S.gym = GYM_LOCATIONS.find(g => g.id === user.data.default_gym_id);
+    if (S.gym) {
+      S.gymChoice = S.gym.id;
+    }
+  }
+
   const { data: authData, error: authError } = await db.auth.getUser();
 
-if (!authError && authData.user?.email && authData.user.email_confirmed_at) {
-  const verifiedEmail = authData.user.email.toLowerCase();
+  if (!authError && authData.user?.email && authData.user.email_confirmed_at) {
+    const verifiedEmail = authData.user.email.toLowerCase();
 
-  const { data: updatedUser, error: syncError } = await db
-    .from('users')
-    .update({ email: verifiedEmail })
-    .eq('user_id', id)
-    .eq('auth_user_id', authData.user.id)
-    .select('user_id');
+    const { data: updatedUser, error: syncError } = await db
+      .from('users')
+      .update({ email: verifiedEmail })
+      .eq('user_id', id)
+      .eq('auth_user_id', authData.user.id)
+      .select('user_id');
 
-  if (syncError) {
-    console.error('Email sync error:', syncError);
-  } else if (updatedUser?.length === 1) {
-    S.email = verifiedEmail;
+    if (syncError) {
+      console.error('Email sync error:', syncError);
+    } else if (updatedUser?.length === 1) {
+      S.email = verifiedEmail;
+    }
   }
-}
 
   await load();
   derive();
@@ -2813,18 +2835,22 @@ if (b.id === 'profile-password-save') {
     return;
   }
 
-  if (
-    a === 'confirm-gym' &&
-    S.screen === 'gym-select' &&
-    !S.gym
-  ) {
+  if (a === 'confirm-gym' &&
+      S.screen === 'gym-select' &&
+      !S.gym
+    ) {
     const gym = GYM_LOCATIONS.find(
       g => String(g.id) === String(S.gymChoice)
     );
 
-    if (!gym) return;
+    if (!gym) {
+      S.msg = 'Selected gym not found. Please select again.';
+      render();
+      return;
+    }
 
     S.gym = gym;
+    S.gymChoice = gym.id;
     try {
       localStorage.setItem(savedGymKey(), String(gym.id));
     } catch (error) {
@@ -2838,7 +2864,6 @@ if (b.id === 'profile-password-save') {
     render();
     return;
   }
-
   // EXISTING SPOT ACTIONS
 
   if (a === 'mode') {
@@ -3207,7 +3232,8 @@ function saveView() {
   if (
     !S.me ||
     S.screen === 'login' ||
-    S.screen === 'claim'
+    S.screen === 'claim' ||
+    !S.gym
   ) {
     return;
   }
@@ -3222,7 +3248,7 @@ function saveView() {
         sel: S.sel,
         group: S.group,
         q: S.q,
-        gymId: S.gym?.id || null
+        gymId: S.gym?.id
       })
     );
   } catch (error) {}
@@ -3239,7 +3265,6 @@ function restoreView() {
 
   if (!saved || saved.u !== S.me) return;
 
-  // FIX: Check if GYM_LOCATIONS has data before trying to find gym
   if (!GYM_LOCATIONS || GYM_LOCATIONS.length === 0) {
     console.warn('No gym locations loaded, skipping restoreView');
     return;
@@ -3288,15 +3313,6 @@ function restoreView() {
 
   render();
 }
-
-
-window.addEventListener('pagehide', saveView);
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    saveView();
-  }
-});
 
 // ========================================
 // INITIALIZE APPLICATION
