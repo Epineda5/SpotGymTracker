@@ -686,3 +686,55 @@ html.spot-loading #app {
   font-size: 0.85rem;
   font-weight: 600;
 }
+
+.admin-stats {
+  align-items: start;
+}
+
+.admin-stat summary {
+  cursor: pointer;
+  min-height: 44px;
+  list-style: none;
+}
+
+.admin-stat summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-stat summary::after {
+  content: 'Show list ▾';
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+.admin-stat[open] > summary::after {
+  content: 'Hide list ▴';
+}
+
+.admin-stat summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.admin-list-content {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+.admin-list {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.admin-list li + li {
+  margin-top: 8px;
+}
+
+.admin-list-content h4 {
+  margin: 12px 0 6px;
+}

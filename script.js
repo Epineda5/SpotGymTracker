@@ -957,6 +957,290 @@ function equipmentUsageTable() {
 // ========================================
 // PAGE TEMPLATES
 // ========================================
+const adminExpanded = new Set();
+let adminUsernames = new Map();
+let adminNamesOwner = null;
+let adminNamesKey = '';
+let adminNamesStatus = 'idle';
+let adminNamesLoadedAt = 0;
+let adminNamesRequest = 0;
+
+async function loadAdminUsernames() {
+  if (S.screen !== 'admin' || !S.me) return;
+
+  const owner = S.me;
+
+  const ids = [...new Set(E.flatMap(e => [
+    e.sess?.user_id,
+    ...e.rows.map(row => row.user_id)
+  ]).filter(id => id != null).map(String))].sort();
+
+  if (adminNamesOwner !== owner) {
+    adminUsernames.clear();
+    adminNamesKey = '';
+    adminNamesOwner = owner;
+  }
+
+  const key = JSON.stringify([owner, ids]);
+
+  if (
+    key === adminNamesKey &&
+    (
+      adminNamesStatus === 'loading' ||
+      Date.now() - adminNamesLoadedAt < 30000
+    )
+  ) return;
+
+  adminNamesKey = key;
+  const request = ++adminNamesRequest;
+
+  if (!ids.length) {
+    adminNamesStatus = 'ready';
+    adminNamesLoadedAt = Date.now();
+    return;
+  }
+
+  adminNamesStatus = 'loading';
+
+  try {
+    const { data, error } = await db
+      .from('users')
+      .select('user_id, username')
+      .in('user_id', ids);
+
+    if (error) throw error;
+
+    if (
+      request !== adminNamesRequest ||
+      S.me !== owner
+    ) return;
+
+    adminUsernames = new Map((data || []).map(user => [
+      String(user.user_id),
+      user.username?.trim() || ''
+    ]));
+
+    adminNamesStatus = 'ready';
+  } catch (error) {
+    if (
+      request !== adminNamesRequest ||
+      S.me !== owner
+    ) return;
+
+    adminNamesStatus = 'error';
+    console.error('Admin usernames failed:', error);
+  }
+
+  adminNamesLoadedAt = Date.now();
+
+  if (S.screen === 'admin' && S.me === owner) {
+    render();
+  }
+}
+
+function adminUsername(id) {
+  if (id == null) return 'No user assigned';
+
+  return adminUsernames.get(String(id)) || 'User #' + id;
+}
+
+function adminEquipmentList(
+  machines,
+  showUser = false,
+  showTime = false
+) {
+  if (!machines.length) {
+    return '<p class="hint">No matching equipment.</p>';
+  }
+
+  return `
+    <ul class="admin-list">
+      ${machines.map(e => {
+        const userId = e.status === 'reserved'
+          ? e.rows[0]?.user_id
+          : e.sess?.user_id;
+
+        return `
+          <li>
+            ${spotText(e.name)}
+
+            ${showUser
+              ? ' — ' + spotText(adminUsername(userId))
+              : ''}
+
+            ${showTime
+              ? ' · ' + fmt(e.rem || 0) + ' remaining'
+              : ''}
+          </li>
+        `;
+      }).join('')}
+    </ul>
+  `;
+}
+
+function adminStatPanel(key, count, label, contents) {
+  return `
+    <details class="stat admin-stat"
+             data-admin-panel="${key}"
+             ${adminExpanded.has(key) ? 'open' : ''}>
+
+      <summary id="admin-toggle-${key}">
+        <b>${count}</b>
+        ${label}
+      </summary>
+
+      <div class="admin-list-content">
+        ${contents}
+      </div>
+    </details>
+  `;
+}
+
+function adminDashboard() {
+  // Preserve expanded lists during automatic page updates.
+  app.querySelectorAll('details[data-admin-panel]')
+    .forEach(panel => {
+      if (panel.open) {
+        adminExpanded.add(panel.dataset.adminPanel);
+      } else {
+        adminExpanded.delete(panel.dataset.adminPanel);
+      }
+    });
+
+  void loadAdminUsernames();
+
+  const available = E.filter(e =>
+    e.status === 'available'
+  );
+
+  const inUse = E.filter(e =>
+    e.status === 'inuse'
+  );
+
+  const reserved = E.filter(e =>
+    e.status === 'reserved'
+  );
+
+  const unavailable = E.filter(e =>
+    e.status === 'unavailable'
+  );
+
+  const queues = E.filter(e => e.rows.length);
+
+  const totalInLines = queues.reduce(
+    (total, e) => total + e.rows.length,
+    0
+  );
+
+  const queueList = queues.length
+    ? queues.map(e => `
+        <h4>${spotText(e.name)}</h4>
+
+        <ol class="admin-list">
+          ${e.rows.map(row => `
+            <li value="${Number(row.position)}">
+              ${spotText(adminUsername(row.user_id))}
+            </li>
+          `).join('')}
+        </ol>
+      `).join('')
+    : '<p class="hint">Nobody is waiting.</p>';
+
+  return `
+    <h2>Admin Dashboard</h2>
+
+    <div class="card">
+      <h3>Equipment Status</h3>
+
+      <div class="stats admin-stats">
+        ${adminStatPanel(
+          'available',
+          available.length,
+          'Available',
+          adminEquipmentList(available)
+        )}
+
+        ${adminStatPanel(
+          'inuse',
+          inUse.length,
+          'In Use',
+          adminEquipmentList(inUse, true)
+        )}
+
+        ${adminStatPanel(
+          'reserved',
+          reserved.length,
+          'Reserved',
+          adminEquipmentList(reserved, true)
+        )}
+
+        ${adminStatPanel(
+          'unavailable',
+          unavailable.length,
+          'Unavailable',
+          adminEquipmentList(unavailable)
+        )}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Users in Waitlists</h3>
+
+      <p class="hint">
+        Counts queue spots. A user on multiple machines
+        appears in each line.
+      </p>
+
+      ${adminStatPanel(
+        'waitlists',
+        totalInLines,
+        'Total in Lines',
+        queueList
+      )}
+    </div>
+
+    <div class="card">
+      <h3>Current Sessions</h3>
+
+      <p class="hint">
+        Equipment workouts, not logged-in accounts.
+      </p>
+
+      ${adminStatPanel(
+        'sessions',
+        inUse.length,
+        'Active Equipment Sessions',
+        adminEquipmentList(inUse, true, true)
+      )}
+    </div>
+
+    ${adminNamesStatus === 'loading'
+      ? '<p class="hint">Loading usernames…</p>'
+      : ''}
+
+    ${adminNamesStatus === 'error'
+      ? `<p class="hint" role="status">
+           Could not load usernames.
+           User IDs are shown where names are unavailable.
+         </p>`
+      : ''}
+  `;
+}
+
+document.addEventListener('toggle', event => {
+  const panel = event.target;
+
+  if (
+    !panel.matches?.('details[data-admin-panel]') ||
+    !panel.isConnected
+  ) return;
+
+  if (panel.open) {
+    adminExpanded.add(panel.dataset.adminPanel);
+  } else {
+    adminExpanded.delete(panel.dataset.adminPanel);
+  }
+}, true);
 
 const V = {
 
@@ -1144,52 +1428,8 @@ profile: () => `
     `;
   },
 
-  admin: () => {
-    const stats = E.reduce((acc, e) => {
-      acc[e.status] = (acc[e.status] || 0) + 1;
-      return acc;
-    }, {
-      available: 0,
-      inuse: 0,
-      reserved: 0,
-      unavailable: 0
-    });
-
-    return `
-      <h2>Admin Dashboard</h2>
-
-      <div class="card">
-        <h3>Equipment Status</h3>
-        <div class="stats">
-          <div class="stat"><b>${stats.available}</b> Available</div>
-          <div class="stat"><b>${stats.inuse}</b> In Use</div>
-          <div class="stat"><b>${stats.reserved}</b> Reserved</div>
-          <div class="stat"><b>${stats.unavailable}</b> Unavailable</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Users in Waitlists</h3>
-        <div class="stats">
-          <div class="stat">
-            <b>${E.reduce((a, e) => a + e.queue.length, 0)}</b>
-            Total in Lines
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Current Sessions</h3>
-        <div class="stats">
-          <div class="stat">
-            <b>${E.filter(e => e.status === 'inuse').length}</b>
-            Active Sessions
-          </div>
-        </div>
-      </div>
-    `;
-  },
-
+  admin: () => adminDashboard(),
+  
   find: () => `
     <h2>What are you training?</h2>
 
