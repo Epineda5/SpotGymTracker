@@ -306,7 +306,7 @@ async function runEquipmentAction(
     const { data, error } = await db.rpc('spot_equipment_action', {
       p_action: action,
       p_equipment: equipment,
-      p_gym_id: S.gym?.id,
+      p_gym_id: S.gym?.gym_id,
       p_minutes: minutes,
       p_finish_current: finish
     });
@@ -338,7 +338,7 @@ async function refreshEquipmentState() {
 
   const { data, error } = await db.rpc('spot_equipment_action', {
     p_action: 'get',
-    p_gym_id: S.gym?.id
+    p_gym_id: S.gym?.gym_id
   });
 
   if (error) throw error;
@@ -385,7 +385,7 @@ const spotNotifications = [];
 const notifiedTurns = new Set();
 
 function checkWaitlistNotifications() {
-  if (!S.me || !S.notificationsEnabled || !S.gym?.id) return;
+  if (!S.me || !S.notificationsEnabled || !S.gym?.gym_id) return;
 
   for (const e of E) {
     const first = e.rows?.[0];
@@ -530,12 +530,24 @@ function distanceMiles(lat1, lng1, lat2, lng2) {
   );
 }
 
+
 function gymOptions() {
-  return GYM_LOCATIONS.map(g => ({
+  const gyms = GYM_LOCATIONS.map(g => ({
     ...g,
-    distance: S.gymDistances?.[g.id] ?? null
+    distance: S.gymDistances?.[g.gym_id] ?? null
   }));
+
+  if (S.gymDistances) {
+    gyms.sort((a, b) =>
+      (a.distance ?? Infinity) - (b.distance ?? Infinity)
+    );
+  } else {
+    gyms.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return gyms;
 }
+
 
 
 function resetGym() {
@@ -545,9 +557,10 @@ function resetGym() {
   S.gymMessage = '';
 }
 
-function saveGymKey() {
-  return `spotSelectedGym:${S.me}:${S.gym?.id || 'null'}`;
+function savedGymKey() {
+  return `spotSelectedGym:${S.me}`;
 }
+
 
 
 function restoreGymChoice() {
@@ -555,20 +568,20 @@ function restoreGymChoice() {
 
   try {
     const saved = localStorage.getItem(savedGymKey());
+
     if (!saved) return;
 
-    const [userId, gymId] = saved.split(':');
-    if (String(userId) !== String(S.me)) return;
-
     const gym = GYM_LOCATIONS.find(
-      g => String(g.id) === gymId
+      g => String(g.gym_id) === String(saved)
     );
 
-    S.gymChoice = gym ? gym.id : null;
+    S.gymChoice = gym ? gym.gym_id : null;
+
   } catch (error) {
     S.gymChoice = null;
   }
 }
+
 
 // Check browser permission without showing a new prompt.
 async function checkExistingLocationPermission() {
@@ -607,10 +620,10 @@ function gymHeader() {
   name.textContent = S.gym?.name || '';
 }
 
+
 function findNearbyGyms() {
   if (!navigator.geolocation) {
-    S.gymMessage =
-      'Location is not supported. Choose a gym manually.';
+    S.gymMessage = 'Location is not supported. Choose a gym manually.';
     render();
     return;
   }
@@ -626,8 +639,13 @@ function findNearbyGyms() {
 
       S.gymDistances = Object.fromEntries(
         GYM_LOCATIONS.map(g => [
-          g.id,
-          distanceMiles(latitude, longitude, g.lat, g.lng)
+          g.gym_id,
+          distanceMiles(
+            latitude,
+            longitude,
+            Number(g.lat),
+            Number(g.lng)
+          )
         ])
       );
 
@@ -636,12 +654,15 @@ function findNearbyGyms() {
 
       render();
     },
-    () => {
+    error => {
+      console.error('Geolocation error:', error);
+
       if (S.screen !== 'gym-select') return;
 
       S.gymDistances = null;
       S.gymMessage =
-        'Location unavailable. Choose a gym manually.';
+        'Location unavailable: ' + error.message +
+        '. You can select a gym manually.';
 
       render();
     },
@@ -652,6 +673,7 @@ function findNearbyGyms() {
     }
   );
 }
+
 
 // ========================================
 // THEME
@@ -705,11 +727,11 @@ const fmt = seconds => {
     String(seconds % 60).padStart(2, '0');
 };
 
-const get = (id, gymId = S.gym?.id) => 
+const get = (id, gymId = S.gym?.gym_id) => 
   E.find(e => e.id === id && (gymId ? e.gym_id === gymId : true));
 
 const mine = () =>
-  E.filter(e => e.queue.includes('You') && e.gym_id === S.gym?.id);
+  E.filter(e => e.queue.includes('You') && e.gym_id === S.gym?.gym_id);
 
 
 const using = () =>
@@ -1033,13 +1055,14 @@ profile: () => `
     ${S.gymMessage}
   </p>
 
+ 
   <div class="gym-photo-grid">
     ${GYM_LOCATIONS.length ? gymOptions().map(g => `
       <button type="button"
-        class="gym-photo-card gym-photo-${String(g.name).toLowerCase().replace(/[^a-z]+/g, '-')} ${String(S.gymChoice) === String(g.id) ? 'chosen' : ''}"
+        class="gym-photo-card gym-photo-${String(g.name).toLowerCase().replace(/[^a-z]+/g, '-')} ${String(S.gymChoice) === String(g.gym_id) ? 'chosen' : ''}"
         data-a="choose-gym"
-        data-g="${g.id}"
-        aria-pressed="${String(S.gymChoice) === String(g.id)}">
+        data-g="${g.gym_id}"
+        aria-pressed="${String(S.gymChoice) === String(g.gym_id)}">
 
         <span class="gym-photo-check" aria-hidden="true">✓</span>
 
@@ -1054,6 +1077,7 @@ profile: () => `
       </button>
     `).join('') : '<p class="hint">Loading gyms...</p>'}
   </div>
+
 
   <button type="button"
     class="btn gym-confirm-button"
@@ -1457,7 +1481,7 @@ profile: () => `
 
 function derive() {
   const now = vnow();
-  const gymId = S.gym?.id;
+  const gymId = S.gym?.gym_id;
 
   E = RAW.eq
     .filter(eq => gymId ? eq.gym_id === gymId : true)
@@ -1634,7 +1658,7 @@ async function compact(eid) {
 async function maintain() {
   if (upNextReady) return;
   if (busy) return;
-  if (!S.gym?.id) return;
+  if (!S.gym?.gym_id) return;
 
   busy = true;
   let changed = false;
@@ -1966,8 +1990,22 @@ function render() {
     V[S.screen]() +
     (S.screen === 'admin' ? equipmentUsageTable() : '');
     
+
+  
   gymHeader();
   updateEquipmentButtons();
+
+  // Remember the selected gym and current page.
+  if (S.me && S.gym && S.screen !== 'claim') {
+    saveView();
+  }
+  
+
+  // Remember the selected gym and current page.
+  if (S.me && S.gym && S.screen !== 'claim') {
+    saveView();
+  }
+
 
   if (inApp && key) {
     const match = [...app.querySelectorAll(focused.tagName)]
@@ -2099,14 +2137,20 @@ async function enter(id) {
     }
   }
 
+
   await load();
   derive();
+
   resetGym();
   restoreGymChoice();
 
+
+
+
+  
   S.screen = S.email === ADMIN_EMAIL
-    ? 'admin'
-    : 'gym-select';
+  ? 'admin'
+  : 'gym-select';
 
   S.stack = [];
 
@@ -2856,6 +2900,7 @@ if (b.id === 'profile-password-save') {
     return;
   }
 
+
   // GYM SELECTION ACTIONS
 
   if (a === 'find-nearby' && S.screen === 'gym-select') {
@@ -2865,20 +2910,21 @@ if (b.id === 'profile-password-save') {
 
   if (a === 'choose-gym' && S.screen === 'gym-select') {
     const chosen = GYM_LOCATIONS.find(
-      g => String(g.id) === b.dataset.g
+      g => String(g.gym_id) === String(b.dataset.g)
     );
-  
-    S.gymChoice = chosen?.id ?? null;
+
+    S.gymChoice = chosen?.gym_id ?? null;
     render();
     return;
   }
 
-  if (a === 'confirm-gym' &&
-      S.screen === 'gym-select' &&
-      !S.gym
-    ) {
+  if (
+    a === 'confirm-gym' &&
+    S.screen === 'gym-select' &&
+    !S.gym
+  ) {
     const gym = GYM_LOCATIONS.find(
-      g => String(g.id) === String(S.gymChoice)
+      g => String(g.gym_id) === String(S.gymChoice)
     );
 
     if (!gym) {
@@ -2888,12 +2934,14 @@ if (b.id === 'profile-password-save') {
     }
 
     S.gym = gym;
-    S.gymChoice = gym.id;
+    S.gymChoice = gym.gym_id;
+
     try {
-      localStorage.setItem(savedGymKey(), String(gym.id));
+      localStorage.setItem(savedGymKey(), String(gym.gym_id));
     } catch (error) {
       console.error('Could not save gym preference:', error);
     }
+
     S.screen = 'find';
     S.stack = [];
     S.msg = '';
@@ -2902,7 +2950,9 @@ if (b.id === 'profile-password-save') {
     render();
     return;
   }
+
   // EXISTING SPOT ACTIONS
+
 
   if (a === 'mode') {
     S.mode =
@@ -3286,11 +3336,12 @@ function saveView() {
         sel: S.sel,
         group: S.group,
         q: S.q,
-        gymId: S.gym?.id
+        gymId: S.gym?.gym_id
       })
     );
   } catch (error) {}
 }
+
 
 function restoreView() {
   let saved = null;
@@ -3299,23 +3350,20 @@ function restoreView() {
     saved = JSON.parse(
       localStorage.getItem('spotView') || 'null'
     );
-  } catch (error) {}
-
-  if (!saved || saved.u !== S.me) return;
-
-  if (!GYM_LOCATIONS || GYM_LOCATIONS.length === 0) {
-    console.warn('No gym locations loaded, skipping restoreView');
+  } catch (error) {
     return;
   }
 
+  if (!saved || String(saved.u) !== String(S.me)) return;
+
   const gym = GYM_LOCATIONS.find(
-    g => g.id === saved.gymId
+    g => String(g.gym_id) === String(saved.gymId)
   );
 
   if (!gym) return;
 
   S.gym = gym;
-  S.gymChoice = gym.id;
+  S.gymChoice = gym.gym_id;
 
   const allowed = [
     'find',
@@ -3323,31 +3371,24 @@ function restoreView() {
     'map',
     'detail',
     'mylists',
-    'gym-select'
+    'profile'
   ];
 
-  if (!allowed.includes(saved.screen)) {
-    S.screen = 'find';
-    render();
-    return;
-  }
+  S.screen = allowed.includes(saved.screen)
+    ? saved.screen
+    : 'find';
 
-  if (saved.screen === 'detail' && !get(saved.sel)) {
-    S.screen = 'find';
-    render();
-    return;
-  }
-
-  S.screen = saved.screen;
   S.stack = Array.isArray(saved.stack)
-    ? saved.stack.filter(s =>
-        allowed.includes(s)
-      )
+    ? saved.stack.filter(s => allowed.includes(s))
     : [];
 
   S.sel = saved.sel;
   S.group = saved.group;
   S.q = saved.q || '';
+
+  if (S.screen === 'detail' && !get(S.sel)) {
+    S.screen = 'find';
+  }
 
   render();
 }
