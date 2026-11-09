@@ -772,15 +772,25 @@ function sub(e) {
 }
 
 function tile(e) {
+  const average = getAverageWait(e.id);
+
   return `
     <button class="tile s-${e.status}"
             data-a="open"
             data-id="${e.id}">
       <b>${e.name}</b>
+
       <span class="pill s-${e.status}">
         ${LABEL[e.status]}
       </span>
+
       <span class="sub">${sub(e)}</span>
+
+      <span class="average-wait">
+        ${average !== null
+          ? `⏱ 30-day avg: ${average} min`
+          : '⏱ No wait history yet'}
+      </span>
     </button>
   `;
 }
@@ -1549,6 +1559,34 @@ async function loadUsageStats() {
 
   if (S.screen === 'admin') render();
 }
+
+let averageWaitStats = [];
+function getAverageWait(equipmentId) {
+  const record = averageWaitStats.find(
+    row => Number(row.equipment_id) === Number(equipmentId)
+  );
+
+  return record
+    ? Number(record.average_wait_minutes).toFixed(1)
+    : null;
+}
+
+async function loadAverageWaitTimes() {
+  const { data, error } = await db
+    .rpc('get_equipment_average_wait');
+
+  if (error) {
+    console.error('Error loading wait times:', error);
+    return;
+  }
+
+  averageWaitStats = data || [];
+  console.log('Average wait times:', averageWaitStats);
+  if (['map', 'detail'].includes(S.screen)) {
+    render();
+  }
+}
+loadAverageWaitTimes();
 
 async function compact(eid) {
     if (upNextReady) {
