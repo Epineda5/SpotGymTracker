@@ -1733,7 +1733,6 @@ function derive() {
 
       const session = RAW.se.find(x =>
         x.equipment_id === q.equipment_id &&
-        (gymId ? x.gym_id === gymId : true) &&
         (!x.end_time || Date.parse(x.end_time) > now)
       );
 
