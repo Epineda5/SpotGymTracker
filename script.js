@@ -306,7 +306,6 @@ async function runEquipmentAction(
     const { data, error } = await db.rpc('spot_equipment_action', {
       p_action: action,
       p_equipment: equipment,
-      p_gym_id: S.gym?.gym_id,
       p_minutes: minutes,
       p_finish_current: finish
     });
@@ -337,8 +336,7 @@ async function refreshEquipmentState() {
   if (!owner) return false;
 
   const { data, error } = await db.rpc('spot_equipment_action', {
-    p_action: 'get',
-    p_gym_id: S.gym?.gym_id
+  p_action: 'get'
   });
 
   if (error) throw error;
@@ -2335,7 +2333,7 @@ async function enter(id) {
   }
 
   const user = await db.from('users')
-    .select('email, avatar_url, notifications_enabled, default_gym_id')
+    .select('email, avatar_url, notifications_enabled')
     .eq('user_id', id)
     .maybeSingle();
 
@@ -2350,13 +2348,8 @@ async function enter(id) {
   S.msg = '';
   S.email = user.data?.email || '';
 
-  // Update default gym if stored
-  if (user.data?.default_gym_id) {
-    S.gym = GYM_LOCATIONS.find(g => g.id === user.data.default_gym_id);
-    if (S.gym) {
-      S.gymChoice = S.gym.id;
-    }
-  }
+  // Restore the user's previously selected gym
+  restoreGymChoice();
 
   const { data: authData, error: authError } = await db.auth.getUser();
 
