@@ -3114,13 +3114,22 @@ if (b.id === 'profile-password-save') {
     if (!ok) return;
 
     if (a === 'start' || a === 'claim') {
-      S.claim = null;
-      S.sel = id;
-      S.screen = 'detail';
-      S.stack = ['find', 'map'];
+  S.claim = null;
+  S.sel = id;
+  S.screen = 'detail';
+  S.stack = ['find', 'map'];
 
-      toast('Your session timer has started.');
-    } else if (a === 'join') {
+  // Reload the equipment and session data immediately
+  const refreshed = await load();
+
+  if (refreshed) {
+    derive();
+  }
+
+  render();
+
+  toast('Your session timer has started.');
+} else if (a === 'join') {
       go('mylists');
     } else if (a === 'finish') {
       toast('Session finished.');
