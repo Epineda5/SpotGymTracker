@@ -37,29 +37,29 @@
     <div id="notification-items"></div>
   </div>
 </div>
-    <div class="menu-wrap">
+        <div class="menu-wrap">
       <button id="menu-toggle" type="button"
               aria-expanded="false" aria-controls="spot-menu">
         ☰ Menu
       </button>
 
       <div id="spot-menu" class="spot-menu" hidden>
-        <div class="menu-user">
-          <span id="menu-avatar" class="menu-avatar">?</span>
-          <strong id="menu-name">My Account</strong>
-        </div>
+        <button id="profile-open" class="menu-user" type="button">
+          <span id="menu-avatar" class="menu-avatar" aria-hidden="true">?</span>
+          <span class="menu-user-text">
+            <strong id="menu-name">My Account</strong>
+            <span class="menu-profile-label">My Profile</span>
+          </span>
+        </button>
 
-        <button id="profile-open" type="button">My Profile</button>
         <button id="theme-toggle" type="button">Dark Mode</button>
-
         <hr>
-
         <button id="checkin" class="menu-danger" type="button">
           Check Out
         </button>
       </div>
     </div>
-  </header>
+    </header>
   <main id="screen"></main>
 </div>
 <div class="modal" id="modal" role="alertdialog" aria-modal="true" aria-labelledby="mt" hidden><div class="box"><p id="mt">Are you sure you want to check out? You'll lose your current session and waitlists</p><button class="btn danger" id="co-yes">Check out</button><button class="btn alt" id="co-no">Stay checked in</button></div></div>

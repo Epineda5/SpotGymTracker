@@ -134,13 +134,26 @@ input,
     background: var(--bg);
 }
 
-.menu-user {
+.bar .spot-menu .menu-user {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 8px 14px;
-    border-bottom: 1px solid var(--line);
     margin-bottom: 8px;
+}
+
+.menu-user .menu-avatar {
+    flex: 0 0 42px;
+}
+
+.menu-user-text {
+    display: grid;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.menu-profile-label {
+    color: var(--muted);
+    font-size: .85rem;
 }
 
 .menu-avatar {
@@ -737,4 +750,8 @@ html.spot-loading #app {
 
 .admin-list-content h4 {
   margin: 12px 0 6px;
+}
+
+.menu-user #menu-name {
+    font-size: 16px;
 }

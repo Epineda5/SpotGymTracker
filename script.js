@@ -2163,6 +2163,13 @@ if (!spotUserId) {
 
     
     const defaultUsername = (authData.user.email || '').split('@')[0];
+    S.name = profile.username || defaultUsername;
+    S.avatarUrl = profile.avatar_url || null;
+
+    const menuName = $('#menu-name');
+    if (menuName) menuName.textContent = S.name || 'My Account';
+
+    updateSpotMenuAvatar();
 
     $('#profile-username').value = profile.username || defaultUsername;
     $('#profile-first').value = profile.first_name || '';
@@ -3632,7 +3639,12 @@ function restoreView() {
   }
 
   render();
+
+  if (S.screen === 'profile') {
+    loadSpotProfile();
+  }
 }
+
 
 // ========================================
 // INITIALIZE APPLICATION
