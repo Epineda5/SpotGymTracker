@@ -759,3 +759,305 @@ html.spot-loading #app {
 .bar #login-theme-toggle {
     margin-inline-start: auto;
 }
+
+
+/* SPOT GYM LOCATION PAGE */
+
+body:has(.spot-gym-page) .app {
+  max-width: 1200px;
+}
+
+.spot-gym-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.gym-page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.gym-page-heading h1 {
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  margin-bottom: 8px;
+}
+
+.gym-page-heading p {
+  color: var(--muted);
+}
+
+.gym-location-action {
+  background: #7047d6;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 13px 20px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gym-location-action:hover {
+  background: #5935b8;
+}
+
+.gym-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.spot-location-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(20, 20, 50, .08);
+  transition: transform .2s, box-shadow .2s;
+}
+
+.spot-location-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(20, 20, 50, .13);
+}
+
+.spot-location-card.chosen {
+  border: 2px solid #7047d6;
+}
+
+.spot-location-image {
+  height: 175px;
+  background-color: #d9d2ee;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+
+.spot-distance {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  background: rgba(20, 20, 35, .75);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: .85rem;
+  font-weight: 700;
+}
+
+.spot-location-body {
+  padding: 16px;
+}
+
+.spot-location-body h2 {
+  font-size: 1.35rem;
+  margin-bottom: 8px;
+}
+
+.spot-mini-logo {
+  color: #7047d6;
+}
+
+.spot-address {
+  color: var(--muted);
+  font-size: .88rem;
+  min-height: 2.5em;
+  overflow-wrap: anywhere;
+}
+
+.spot-amenities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 16px;
+}
+
+.spot-amenities span {
+  background: #eee8ff;
+  color: #4d319b;
+  padding: 5px 10px;
+  border-radius: 30px;
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.spot-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.spot-card-actions button {
+  min-height: 44px;
+  padding: 10px 6px;
+  border-radius: 11px;
+  font: 700 .88rem Barlow, sans-serif;
+  cursor: pointer;
+}
+
+.spot-select-btn {
+  background: #7047d6;
+  color: white;
+  border: 1px solid #7047d6;
+}
+
+.spot-select-btn.selected {
+  background: #4d319b;
+}
+
+.spot-directions-btn {
+  background: var(--card);
+  color: var(--ink);
+  border: 1.5px solid #7047d6;
+}
+
+.spot-directions-btn:hover {
+  background: #eee8ff;
+  color: #4d319b;
+}
+
+.gym-confirm-button {
+  max-width: 400px;
+  margin: 24px auto;
+  background: #7047d6;
+}
+
+/* UNIQUE LOCATION IMAGES - illustrative photos */
+
+.spot-location-image.gym-photo-provo {
+  background-image: url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=900&q=85');
+}
+
+.spot-location-image.gym-photo-orem {
+  background-image: url('https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=900&q=85');
+}
+
+.spot-location-image.gym-photo-american-fork {
+  background-image: url('https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=900&q=85');
+}
+
+.spot-location-image.gym-photo-lehi {
+  background-image: url('https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=900&q=85');
+}
+
+.spot-location-image.gym-photo-salt-lake-city {
+  background-image: url('https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=900&q=85');
+}
+
+.spot-location-image.gym-photo-draper {
+  background-image: url('https://images.unsplash.com/photo-1518611012118-696072aa579a?w=900&q=85');
+}
+
+/* RESPONSIVE LAYOUT */
+
+@media (max-width: 900px) {
+  .gym-photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .gym-photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gym-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gym-location-action {
+    width: 100%;
+  }
+
+  .spot-location-image {
+    height: 190px;
+  }
+}
+
+/* FIX PAGE WIDTH */
+
+body:has(.spot-gym-page) {
+  margin: 0;
+  width: 100%;
+  background: #f8f9fd;
+}
+
+body:has(.spot-gym-page) .app {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.spot-gym-page {
+  width: min(100% - 64px, 1440px);
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* IMPROVE GYM CARD LAYOUT */
+
+.gym-photo-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.spot-location-image {
+  height: 165px;
+}
+
+.spot-location-body {
+  padding: 16px;
+}
+
+.spot-location-body h2 {
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+.spot-address {
+  min-height: 24px;
+}
+
+.spot-amenities {
+  margin: 12px 0;
+}
+/* IMPROVE PAGE HEADING */
+
+.gym-page-heading {
+  margin-top: 10px;
+  margin-bottom: 24px;
+}
+
+.gym-page-heading h1 {
+  font-size: 2.4rem;
+  letter-spacing: -0.5px;
+}
+
+.gym-location-message {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .gym-photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .spot-gym-page {
+    width: calc(100% - 32px);
+  }
+
+  .gym-photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gym-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

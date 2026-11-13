@@ -1311,51 +1311,73 @@ profile: () => `
 
 
   
+
 'gym-select': () => `
 <section class="gym-selection-page spot-gym-page">
-  <div class="gym-page-intro">
-    <h1>Choose Your Gym</h1>
-    <p>Select a gym to continue. Sharing your location is optional.</p>
-  </div>
-
-  <div class="gym-nearby-bar">
-    <div class="gym-nearby-copy">
-      <strong>Find nearby gyms <span>(Optional)</span></strong>
-      <small>Use your location to sort gyms by distance.</small>
+  <div class="gym-page-heading">
+    <div>
+      <h1>Choose a Spot Gym</h1>
+      <p>Find a Spot gym near you and get directions with Google Maps.</p>
     </div>
-    <button type="button" class="gym-location-action"
-            data-a="find-nearby">
-      Use My Location
+    <button type="button" class="gym-location-action" data-a="find-nearby">
+      ⌖ Use My Location
     </button>
   </div>
 
   <p class="hint gym-location-message" role="status">
-    ${S.gymMessage}
+    ${S.gymMessage || 'Location sharing is optional. You can select any gym.'}
   </p>
 
- 
   <div class="gym-photo-grid">
-    ${GYM_LOCATIONS.length ? gymOptions().map(g => `
-      <button type="button"
-        class="gym-photo-card gym-photo-${String(g.name).toLowerCase().replace(/[^a-z]+/g, '-')} ${String(S.gymChoice) === String(g.gym_id) ? 'chosen' : ''}"
-        data-a="choose-gym"
-        data-g="${g.gym_id}"
-        aria-pressed="${String(S.gymChoice) === String(g.gym_id)}">
+    ${GYM_LOCATIONS.length ? gymOptions().map(g => {
+      const selected = String(S.gymChoice) === String(g.gym_id);
+      const location = String(g.name || 'Location');
+      const slug = location.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const address = g.address || `${location}, Utah`;
+      const safe = value => String(value).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;',
+        '"': '&quot;', "'": '&#39;'
+      }[c]));
 
-        <span class="gym-photo-check" aria-hidden="true">✓</span>
+      return `
+        <article class="spot-location-card ${selected ? 'chosen' : ''}">
+          <div class="spot-location-image gym-photo-${slug}">
+            ${g.distance !== null && Number.isFinite(g.distance) ? `
+              <span class="spot-distance">⌖ ${g.distance.toFixed(1)} mi</span>
+            ` : ''}
+          </div>
 
-        <span class="gym-photo-info">
-          <strong>⌖ ${g.name}</strong>
-          <small>
-            ${g.distance !== null && Number.isFinite(g.distance)
-              ? `${g.distance.toFixed(1)} mi away`
-              : 'Select this gym'}
-          </small>
-        </span>
-      </button>
-    `).join('') : '<p class="hint">Loading gyms...</p>'}
+          <div class="spot-location-body">
+            <h2><span class="spot-mini-logo">🏋</span> Spot — ${safe(location)}</h2>
+            <p class="spot-address">⌖ ${safe(address)}</p>
+
+            <div class="spot-amenities">
+              <span>Weights</span>
+              <span>Cardio</span>
+              <span>Equipment</span>
+            </div>
+
+            <div class="spot-card-actions">
+              <button type="button"
+                class="spot-select-btn ${selected ? 'selected' : ''}"
+                data-a="choose-gym"
+                data-g="${safe(g.gym_id)}"
+                aria-pressed="${selected}">
+                ${selected ? '✓ Selected' : 'Select Gym'}
+              </button>
+
+              <button type="button"
+                class="spot-directions-btn"
+                data-a="get-directions"
+                data-g="${safe(g.gym_id)}">
+                <span>📍</span> Get Directions
+              </button>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('') : '<p class="hint">No gym locations available.</p>'}
   </div>
-
 
   <button type="button"
     class="btn gym-confirm-button"
@@ -1365,6 +1387,8 @@ profile: () => `
   </button>
 </section>
 `,
+
+
 
 
   login: () => {
@@ -3151,6 +3175,35 @@ if (b.id === 'profile-password-save') {
 
 
   // GYM SELECTION ACTIONS
+
+
+if (a === 'get-directions' && S.screen === 'gym-select') {
+  const gym = GYM_LOCATIONS.find(
+    g => String(g.gym_id) === String(b.dataset.g)
+  );
+
+  if (!gym) return;
+
+  const lat = Number(gym.lat);
+  const lng = Number(gym.lng);
+
+  let destination;
+
+  if (gym.lat != null && gym.lng != null &&
+    Number.isFinite(lat) && Number.isFinite(lng)) {
+    destination = `${lat},${lng}`;
+  } else {
+    destination = gym.address || `${gym.name}, Utah`;
+  }
+
+  const url = 'https://www.google.com/maps/dir/?api=1' +
+    '&destination=' + encodeURIComponent(destination) +
+    '&travelmode=driving';
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return;
+}
+
 
   if (a === 'find-nearby' && S.screen === 'gym-select') {
     findNearbyGyms();
