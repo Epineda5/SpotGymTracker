@@ -1701,35 +1701,74 @@ profile: () => `
 
   admin: () => adminDashboard(),
   
-  find: () => `
-    <h2>What are you training?</h2>
+  
+find: () => `
+<h2>What are you training?</h2>
 
-    <form id="sf" class="card">
-      <label for="q">Search equipment</label>
+<!-- AI Workout Assistant -->
+<section class="card ai-workout-card">
+  <div class="ai-workout-heading">
+    <span class="ai-workout-icon" aria-hidden="true">✨</span>
+    <div>
+      <h3>Spot AI Workout Assistant</h3>
+      <p class="hint">
+        Get a personalized workout based on your gym's equipment.
+      </p>
+    </div>
+  </div>
 
-      <div class="search-wrap">
-        <input id="q"
-               type="search"
-               placeholder="Bench press, treadmill…"
-               autocomplete="off"
-               role="combobox"
-               aria-autocomplete="list"
-               aria-controls="equipment-suggestions"
-               aria-expanded="false">
+  <form id="ai-workout-form">
+    <label for="ai-workout-goal">
+      What is your workout goal?
+    </label>
 
-        <div id="equipment-suggestions"
-             class="suggestions"
-             role="listbox"
-             hidden></div>
-      </div>
+    <textarea
+      id="ai-workout-goal"
+      rows="3"
+      maxlength="500"
+      placeholder="I want to train chest for 30 minutes"
+      required
+    ></textarea>
 
-      <button class="btn" type="submit">Search</button>
-    </form>
-
-    <button class="btn alt" data-a="groups">
-      Browse by muscle group
+    <button class="btn ai-generate-btn" type="submit">
+      ✨ Generate My Workout
     </button>
-  `,
+  </form>
+
+  <div id="ai-workout-result"
+       role="status"
+       aria-live="polite"
+       hidden></div>
+</section>
+
+<!-- Existing equipment search -->
+<form id="sf" class="card">
+  <label for="q">Search equipment</label>
+
+  <div class="search-wrap">
+    <input id="q"
+           type="search"
+           placeholder="Bench press, treadmill…"
+           autocomplete="off"
+           role="combobox"
+           aria-autocomplete="list"
+           aria-controls="equipment-suggestions"
+           aria-expanded="false">
+
+    <div id="equipment-suggestions"
+         class="suggestions"
+         role="listbox"
+         hidden></div>
+  </div>
+
+  <button class="btn" type="submit">Search</button>
+</form>
+
+<button class="btn alt" data-a="groups">
+  Browse by muscle group
+</button>
+`,
+
 
   groups: () => `
     <h2>Pick a muscle group</h2>
@@ -2673,6 +2712,59 @@ async function enter(id) {
 
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
+
+  // AI Workout Assistant
+  if (ev.target.id === 'ai-workout-form') {
+    const goal = $('#ai-workout-goal').value.trim();
+    const gymId = S.gym?.gym_id;
+    const result = $('#ai-workout-result');
+    const button = ev.target.querySelector('button[type="submit"]');
+
+    if (!goal || !gymId) {
+      toast('Please enter a goal and select a gym.');
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = '✨ Generating your workout...';
+
+    result.hidden = false;
+    result.textContent = 'Creating your personalized workout plan...';
+
+    try {
+      const { data, error } = await db.functions.invoke(
+        'ai-workout-assistant',
+        {
+          body: {
+            goal: goal,
+            gym_id: gymId
+          }
+        }
+      );
+
+      if (error) throw error;
+
+      if (!data?.success || !data?.workout) {
+        throw new Error('No workout plan was returned.');
+      }
+
+      // Display AI text safely.
+      result.innerHTML = DOMPurify.sanitize(
+        marked.parse(data.workout)
+      );
+
+    } catch (error) {
+      console.error('AI Workout Error:', error);
+      result.textContent =
+        'Unable to generate your workout. Please try again.';
+    } finally {
+      button.disabled = false;
+      button.textContent = '✨ Generate My Workout';
+    }
+
+    return;
+  }
+
     if (ev.target.id === 'forgot-form') {
     const email = $('#reset-email').value.trim();
 

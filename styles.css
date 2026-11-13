@@ -1106,3 +1106,147 @@ body:has(.spot-gym-page) .app {
     white-space: normal;
   }
 }
+/* Spot AI Workout Assistant */
+
+.ai-workout-card {
+  border: 1px solid #9370db;
+  padding: 24px;
+}
+
+.ai-workout-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.ai-workout-icon {
+  font-size: 30px;
+}
+
+.ai-workout-heading h3 {
+  margin-bottom: 6px;
+}
+
+.ai-workout-card textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.ai-workout-card textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ai-generate-btn {
+  background: #7047d6;
+  color: white;
+}
+
+.ai-generate-btn:hover {
+  background: #5935b8;
+}
+
+#ai-workout-result {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .ai-workout-card {
+    padding: 16px;
+  }
+}
+
+/* AI Workout Results */
+
+#ai-workout-result {
+  white-space: normal;
+  line-height: 1.7;
+}
+
+#ai-workout-result h2,
+#ai-workout-result h3 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+
+#ai-workout-result p {
+  max-width: none;
+  margin-bottom: 14px;
+}
+
+#ai-workout-result strong {
+  color: var(--ink);
+}
+
+#ai-workout-result table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+#ai-workout-result th,
+#ai-workout-result td {
+  border: 1px solid var(--line);
+  padding: 12px;
+  text-align: left;
+}
+
+#ai-workout-result th {
+  background: var(--brand);
+  color: white;
+}
+
+#ai-workout-result ul,
+#ai-workout-result ol {
+  padding-left: 24px;
+  margin-bottom: 16px;
+}
+
+#ai-workout-result {
+  overflow-x: auto;
+}
+/* Improve AI workout tables on mobile */
+
+#ai-workout-result {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+#ai-workout-result table {
+  min-width: 550px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#ai-workout-result th,
+#ai-workout-result td {
+  padding: 10px 12px;
+  white-space: normal;
+  vertical-align: top;
+}
+
+@media (max-width: 600px) {
+  #ai-workout-result {
+    padding: 12px;
+  }
+
+  #ai-workout-result table {
+    font-size: 13px;
+  }
+}
