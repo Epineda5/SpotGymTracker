@@ -1,6 +1,34 @@
 
 const SUPABASE_URL = 'https://nfdrezutavvxhmblsqdk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_FQmEnU0iXInf1Q8lvmMunw_o5UacvKM';
+const spotResetParams = new URLSearchParams(window.location.search);
+const spotResetHash = new URLSearchParams(window.location.hash.slice(1));
+
+const spotRecoveryLink =
+  spotResetParams.get('spot_reset') === '1' ||
+  spotResetParams.get('type') === 'recovery' ||
+  spotResetHash.get('type') === 'recovery';
+
+let spotRecoveryConfirmed = false;
+
+function clearSpotResetUrl() {
+  const url = new URL(window.location.href);
+
+  url.searchParams.delete('spot_reset');
+  url.searchParams.delete('type');
+  url.searchParams.delete('code');
+  url.searchParams.delete('error');
+  url.searchParams.delete('error_code');
+  url.searchParams.delete('error_description');
+
+  url.hash = '';
+
+  window.history.replaceState(
+    {},
+    '',
+    url.pathname + url.search
+  );
+}
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 
@@ -1418,6 +1446,14 @@ profile: () => `
                autocomplete="${su ? 'new-password' : 'current-password'}"
                required>
 
+        ${!su ? `
+          <p style="text-align:right; margin:8px 0">
+            <button type="button" class="link" data-a="forgot-password">
+              Forgot Password?
+            </button>
+          </p>
+        ` : ''}
+
         ${su ? `
           <label for="pw2">Confirm password</label>
           <input id="pw2"
@@ -1445,6 +1481,38 @@ profile: () => `
       </form>
     `;
   },
+
+    forgot: () => `
+    <h1>Reset your password</h1>
+    <form id="forgot-form" class="card">
+      <p>Enter your email and we'll send you a password reset link.</p>
+
+      <label for="reset-email">Email</label>
+      <input id="reset-email" type="email" autocomplete="email" required>
+
+      ${S.msg ? `<p class="${S.ok ? 'hint' : 'err'}">${S.msg}</p>` : ''}
+
+      <button class="btn" type="submit">Send reset link</button>
+      <button class="btn alt" type="button" data-a="back-login">
+        Back to login
+      </button>
+    </form>
+  `,
+
+  reset: () => `
+    <h1>Choose a new password</h1>
+    <form id="reset-form" class="card">
+      <label for="new-password">New password</label>
+      <input id="new-password" type="password" minlength="6" required>
+
+      <label for="confirm-new-password">Confirm new password</label>
+      <input id="confirm-new-password" type="password" minlength="6" required>
+
+      ${S.msg ? `<p class="err">${S.msg}</p>` : ''}
+
+      <button class="btn" type="submit">Update password</button>
+    </form>
+  `,
 
   admin: () => adminDashboard(),
   
@@ -2431,7 +2499,49 @@ async function enter(id) {
 
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
+    if (ev.target.id === 'forgot-form') {
+    const email = $('#reset-email').value.trim();
 
+    const { error } = await db.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname + '?spot_reset=1'
+    });
+
+    S.msg = error
+      ? error.message
+      : 'If an account exists for that email, a reset link will be sent. Check your inbox.';
+
+    S.ok = !error;
+    render();
+    return;
+  }
+
+  if (ev.target.id === 'reset-form') {
+    const password = $('#new-password').value;
+
+    if (password !== $('#confirm-new-password').value) {
+      S.msg = 'Passwords do not match.';
+      render();
+      return;
+    }
+
+    const { error } = await db.auth.updateUser({ password });
+
+    if (error) {
+      S.msg = error.message;
+      render();
+      return;
+    }
+
+    await db.auth.signOut();
+    spotRecoveryConfirmed = false;
+    clearSpotResetUrl();
+    S.screen = 'login';
+    S.mode = 'login';
+    S.msg = 'Password updated! Log in with your new password.';
+    S.ok = true;
+    render();
+    return;
+  }
   if (ev.target.id === 'lf') {
     const email = $('#em').value.trim();
     const password = $('#pw').value;
@@ -3253,6 +3363,23 @@ if (a === 'get-directions' && S.screen === 'gym-select') {
     return;
   }
 
+    if (a === 'forgot-password') {
+    S.screen = 'forgot';
+    S.msg = '';
+    S.ok = false;
+    render();
+    return;
+  }
+
+  if (a === 'back-login') {
+    clearSpotResetUrl();
+    S.screen = 'login';
+    S.mode = 'login';
+    S.msg = '';
+    render();
+    return;
+  }
+
   // EXISTING SPOT ACTIONS
 
 
@@ -3699,6 +3826,18 @@ function restoreView() {
   }
 }
 
+// Supabase fires this when a password recovery link is verified.
+db.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    spotRecoveryConfirmed = true;
+
+    S.screen = 'reset';
+    S.msg = '';
+    S.ok = false;
+
+    render();
+  }
+});
 
 // ========================================
 // INITIALIZE APPLICATION
@@ -3722,6 +3861,30 @@ function finishStartup() {
   try {
     const { data: sessionData } =
       await db.auth.getSession();
+      if (spotRecoveryLink || spotRecoveryConfirmed) {
+  const params = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+
+  const linkError =
+    params.get('error_description') ||
+    hash.get('error_description');
+
+  if (linkError || !sessionData.session) {
+    S.screen = 'forgot';
+
+    S.msg = linkError
+      ? 'Reset link error: ' + linkError.replace(/\+/g, ' ')
+      : 'This reset link is invalid or expired. Request a new one.';
+
+    S.ok = false;
+  } else {
+    S.screen = 'reset';
+    S.msg = '';
+  }
+
+  render();
+  return;
+}
 
     if (!sessionData.session) {
   const localDev =
