@@ -755,3 +755,7 @@ html.spot-loading #app {
 .menu-user #menu-name {
     font-size: 16px;
 }
+
+.bar #login-theme-toggle {
+    margin-inline-start: auto;
+}

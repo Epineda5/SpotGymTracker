@@ -693,19 +693,15 @@ function applyTheme() {
     currentTheme
   );
 
-  const button = $('#theme-toggle');
-
-  if (button) {
-    button.textContent =
-      currentTheme === 'dark' ? 'Light Mode' : 'Dark Mode';
-
+  document.querySelectorAll('#theme-toggle, #login-theme-toggle')
+  .forEach(button => {
+    const isDark = currentTheme === 'dark';
+    button.textContent = isDark ? 'Light Mode' : 'Dark Mode';
     button.setAttribute(
       'aria-label',
-      currentTheme === 'dark'
-        ? 'Switch to light mode'
-        : 'Switch to dark mode'
+      isDark ? 'Switch to light mode' : 'Switch to dark mode'
     );
-  }
+  });
 }
 
 applyTheme();
@@ -2275,6 +2271,11 @@ if (notificationWrap) {
     S.screen === 'gym-select';
 }
 
+const loginThemeToggle = $('#login-theme-toggle');
+
+if (loginThemeToggle) {
+  loginThemeToggle.hidden = S.screen !== 'login';
+}
   const menuToggle = $('#menu-toggle');
   const menu = $('#spot-menu');
 
@@ -2924,7 +2925,7 @@ if (b.id === 'profile-password-save') {
   return;
 }
 
-  if (b.id === 'theme-toggle') {
+  if (b.id === 'theme-toggle' || b.id === 'login-theme-toggle') {
     currentTheme =
       currentTheme === 'light' ? 'dark' : 'light';
 
