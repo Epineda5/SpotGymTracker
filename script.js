@@ -413,6 +413,8 @@ const notifiedTurns = new Set();
 function checkWaitlistNotifications() {
   if (!S.me || !S.notificationsEnabled || !S.gym?.gym_id) return;
 
+  let notificationsChanged = false;
+
   for (const e of E) {
     const first = e.rows?.[0];
 
@@ -437,10 +439,14 @@ function checkWaitlistNotifications() {
       read: false
     });
 
+    notificationsChanged = true;
+
     toast(e.name + " is ready! Check your notifications.");
   }
 
-  renderSpotNotifications();
+  if (notificationsChanged) {
+    renderSpotNotifications();
+  }
 }
 
 function renderSpotNotifications() {
@@ -470,32 +476,183 @@ function renderSpotNotifications() {
     const message = document.createElement('p');
     message.textContent = n.message;
 
+    const timer = document.createElement('strong');
+    timer.className = 'notification-claim-timer';
+
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = 'View equipment';
+    button.textContent = 'Claim Equipment';
 
-    button.addEventListener('click', () => {
-      n.read = true;
-      panel.hidden = true;
-      $('#notification-toggle')?.setAttribute('aria-expanded', 'false');
+    const equipment = E.find(e => e.id === n.equipment_id);
+    const claimable = equipment?.status === 'reserved' &&
+      equipment.rows?.[0]?.user_id === S.me &&
+      equipment.claimLeft > 0;
 
-      const equipment = E.find(e => e.id === n.equipment_id);
+    if (n.claimed) {
+  timer.textContent = 'Successfully claimed!';
+  button.textContent = 'Claimed';
+  button.disabled = true;
+  n.read = true;
+} else if (claimable) {
+  timer.textContent = 'Time left: ' + fmt(equipment.claimLeft);
+  button.textContent = 'Claim Equipment';
+  button.disabled = false;
+} else {
+  timer.textContent = 'Claim expired';
+  button.textContent = 'Claim unavailable';
+  button.disabled = true;
+}
 
-      if (equipment?.status === 'reserved' &&
-          equipment.rows?.[0]?.user_id === S.me &&
-          equipment.claimLeft > 0) {
-        S.claim = n.equipment_id;
-        S.screen = 'claim';
-      } else {
+        button.addEventListener('click', () => {
+      const current = E.find(e => e.id === n.equipment_id);
+
+      if (
+        !current ||
+        current.status !== 'reserved' ||
+        current.rows?.[0]?.user_id !== S.me ||
+        current.claimLeft <= 0
+      ) {
         toast('This equipment is no longer reserved for you.');
+        renderSpotNotifications();
+        return;
       }
 
-      renderSpotNotifications();
-      view();
+      const existingPicker = item.querySelector('.notification-duration-picker');
+
+      if (existingPicker) {
+        existingPicker.remove();
+        return;
+      }
+
+      const picker = document.createElement('div');
+      picker.className = 'notification-duration-picker';
+
+      picker.style.cssText = `
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid #8885;
+        border-radius: 8px;
+      `;
+
+      const label = document.createElement('p');
+      label.textContent = 'How long will you use it?';
+      label.style.margin = '0 0 8px';
+
+      const choices = document.createElement('div');
+      choices.style.cssText = `
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      `;
+
+      [8, 12, 15].forEach(minutes => {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'btn';
+        choice.textContent = minutes + ' min';
+
+        choice.addEventListener('click', () => {
+          const latest = E.find(e => e.id === n.equipment_id);
+
+          if (
+            !latest ||
+            latest.status !== 'reserved' ||
+            latest.rows?.[0]?.user_id !== S.me ||
+            latest.claimLeft <= 0
+          ) {
+            toast('Your claim time has expired.');
+            renderSpotNotifications();
+            return;
+          }
+
+          S.mins = minutes;
+          S.claim = latest.id;
+          S.screen = 'claim';
+          S.msg = '';
+
+          panel.hidden = true;
+          $('#notification-toggle')?.setAttribute(
+            'aria-expanded', 'false'
+          );
+
+          render();
+
+          const claimButton = app.querySelector('[data-a="claim"]');
+
+          if (claimButton) {
+            claimButton.click();
+          }
+        });
+
+        choices.appendChild(choice);
+      });
+
+      picker.append(label, choices);
+      item.appendChild(picker);
     });
 
-    item.append(title, message, button);
+    item.append(title, message, timer, button);
     items.append(item);
+  }
+}
+
+function updateNotificationClaimTimers() {
+    const now = Date.now();
+
+  const expiredClaims = spotNotifications.filter(
+    n => n.claimed && n.claimedAt &&
+         now - n.claimedAt >= 10000
+  );
+
+  if (expiredClaims.length > 0) {
+    for (let i = spotNotifications.length - 1; i >= 0; i--) {
+      const n = spotNotifications[i];
+
+      if (n.claimed && n.claimedAt &&
+          now - n.claimedAt >= 10000) {
+        spotNotifications.splice(i, 1);
+      }
+    }
+
+    renderSpotNotifications();
+  }
+  const items = document.querySelectorAll('.spot-notification-item');
+
+  spotNotifications.forEach((n, index) => {
+    const item = items[index];
+    if (!item) return;
+
+    const timer = item.querySelector('.notification-claim-timer');
+    const button = item.querySelector('button');
+    const equipment = E.find(e => e.id === n.equipment_id);
+
+    if (!timer || !button) return;
+
+    const claimable = equipment?.status === 'reserved' &&
+      equipment.rows?.[0]?.user_id === S.me &&
+      equipment.claimLeft > 0;
+
+    if (n.claimed) {
+  timer.textContent = 'Successfully claimed!';
+  button.textContent = 'Claimed';
+  button.disabled = true;
+  n.read = true;
+} else if (claimable) {
+  timer.textContent = 'Time left: ' + fmt(equipment.claimLeft);
+  button.textContent = 'Claim Equipment';
+  button.disabled = false;
+} else {
+  timer.textContent = 'Claim expired';
+  button.textContent = 'Claim unavailable';
+  button.disabled = true;
+}
+    });
+
+  const count = $('#notification-count');
+  if (count) {
+    const unread = spotNotifications.filter(n => !n.read).length;
+    count.hidden = unread === 0;
+    count.textContent = unread > 9 ? '9+' : String(unread);
   }
 }
 
@@ -759,16 +916,34 @@ const mine = () =>
 const using = () =>
   E.find(e => e.status === 'inuse' && e.by === 'You');
 
-const wait = e => Math.ceil(
-  (
-    (e.status === 'inuse'
-      ? e.rem
-      : e.status === 'reserved'
-        ? e.claimLeft
-        : 0) +
-    e.queue.length * AVG
-  ) / 60
-);
+const wait = e => {
+  if (!e || e.status === 'available') return 0;
+  if (e.status === 'unavailable') return 0;
+
+  if (e.status === 'inuse' && e.by === 'You') {
+    return Math.ceil(Math.max(0, e.rem || 0) / 60);
+  }
+
+  const myPosition = e.queue.indexOf('You');
+
+  const peopleAhead = myPosition >= 0
+    ? myPosition
+    : e.queue.length;
+
+  const currentTime = e.status === 'inuse'
+    ? Math.max(0, e.rem || 0)
+    : e.status === 'reserved'
+      ? Math.max(0, e.claimLeft || 0)
+      : 0;
+
+  const waitingSessions = e.status === 'reserved'
+    ? Math.max(0, peopleAhead - 1)
+    : peopleAhead;
+
+  return Math.ceil(
+    (currentTime + waitingSessions * AVG) / 60
+  );
+};
 
 const LABEL = {
   available: 'Available',
@@ -1723,13 +1898,7 @@ profile: () => `
       ${list.length
         ? list.map(e => {
             const pos = e.queue.indexOf('You') + 1;
-            const estimate = Math.max(
-              0,
-              Math.ceil(
-                wait(e) -
-                (e.queue.length - pos) * AVG / 60
-              )
-            );
+            const estimate = wait(e);
 
             return `
               <div class="card">
@@ -2087,26 +2256,19 @@ function view() {
     e.claimLeft > 0
   );
 
-  const currentClaim = turns.find(e => e.id === S.claim);
+    const currentClaim = turns.find(e => e.id === S.claim);
 
   if (!currentClaim) {
     S.claim = turns[0]?.id ?? null;
 
-    if (S.claim && S.screen !== 'admin') {
-      if (S.screen !== 'claim') {
-        S.stack.push(S.screen);
-      }
-
-      S.screen = 'claim';
-      toast(get(S.claim).name + ' is ready. Claim it now.');
-    } else if (S.screen === 'claim') {
+    if (S.screen === 'claim') {
       S.screen = 'map';
       S.stack = ['find'];
       S.msg = '';
     }
   }
 
-  if (!['find', 'groups', 'profile'].includes(S.screen)) {
+  if (!['find', 'groups', 'profile', 'claim'].includes(S.screen)) {
     const y = window.scrollY;
 
     render();
@@ -2857,6 +3019,19 @@ document.addEventListener('change', async (e) => {
   }
 });
 
+document.addEventListener('click', event => {
+  const wrap = $('#notification-wrap');
+  const panel = $('#notification-panel');
+  const toggle = $('#notification-toggle');
+
+  if (!wrap || !panel || !toggle) return;
+
+  if (!panel.hidden && !wrap.contains(event.target)) {
+    panel.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+  }
+});
+
 document.addEventListener('click', async ev => {
   const b = ev.target.closest('button');
   if (!b) return;
@@ -3265,7 +3440,19 @@ if (b.id === 'profile-password-save') {
       finishCurrent
     );
 
-    if (!ok) return;
+        if (!ok) return;
+
+    if (a === 'claim') {
+      spotNotifications
+        .filter(n => n.equipment_id === id && !n.claimed)
+        .forEach(n => {
+          n.claimed = true;
+          n.read = true;
+          n.claimedAt = Date.now();
+        });
+
+      renderSpotNotifications();
+    }
 
     if (a === 'start' || a === 'claim') {
   S.claim = null;
@@ -3284,6 +3471,13 @@ if (b.id === 'profile-password-save') {
 
   toast('Your session timer has started.');
 } else if (a === 'join') {
+      for (let i = spotNotifications.length - 1; i >= 0; i--) {
+        if (spotNotifications[i].claimed) {
+          spotNotifications.splice(i, 1);
+        }
+      }
+
+      renderSpotNotifications();
       go('mylists');
     } else if (a === 'finish') {
       toast('Session finished.');
@@ -3574,11 +3768,21 @@ if (a === 'get-directions' && S.screen === 'gym-select') {
       return;
     }
 
-    await db.from('waitlist')
+        await db.from('waitlist')
       .delete()
       .eq('waitlist_id', row.waitlist_id);
 
     await compact(c.id);
+
+    spotNotifications
+      .filter(n => n.equipment_id === c.id && !n.claimed)
+      .forEach(n => {
+        n.claimed = true;
+        n.read = true;
+        n.claimedAt = Date.now();     
+      });
+
+    renderSpotNotifications();
 
     S.claim = null;
     S.sel = c.id;
@@ -3628,6 +3832,17 @@ setInterval(() => {
   } catch (error) {}
 
   derive();
+  updateNotificationClaimTimers();
+
+  if (S.screen === 'claim') {
+    const equipment = get(S.claim);
+    const timer = app.querySelector('.claim-card .big');
+
+    if (timer && equipment) {
+      timer.textContent = fmt(equipment.claimLeft);
+    }
+  }
+
   view();
 }, 1000);
 
