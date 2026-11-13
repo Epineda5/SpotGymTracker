@@ -2685,9 +2685,10 @@ if (loginThemeToggle) {
   const brand = $('#brand') || $('.brand');
 
   if (brand) {
-    brand.textContent =
-      S.email === ADMIN_EMAIL ? 'Spot Admin' : 'Spot';
-  }
+  brand.textContent =
+    S.email === ADMIN_EMAIL ? 'Spot Admin' : 'Spot';
+  brand.disabled = !S.me || !S.gym || S.screen === 'find';
+}
 }
 
 // ========================================

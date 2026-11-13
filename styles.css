@@ -1250,3 +1250,16 @@ body:has(.spot-gym-page) .app {
     font-size: 13px;
   }
 }
+
+.bar #brand {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding-inline: 4px;
+  font: 700 1.35rem "Barlow Condensed", sans-serif;
+}
+
+.bar #brand:disabled {
+  cursor: default;
+  opacity: 1;
+}
