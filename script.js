@@ -1446,14 +1446,6 @@ profile: () => `
                autocomplete="${su ? 'new-password' : 'current-password'}"
                required>
 
-        ${!su ? `
-          <p style="text-align:right; margin:8px 0">
-            <button type="button" class="link" data-a="forgot-password">
-              Forgot Password?
-            </button>
-          </p>
-        ` : ''}
-
         ${su ? `
           <label for="pw2">Confirm password</label>
           <input id="pw2"
@@ -1472,12 +1464,30 @@ profile: () => `
           ${su ? 'Create account' : 'Log in'}
         </button>
 
-        <p style="margin:14px 0 0">
-          ${su ? 'Already have an account?' : 'New here?'}
-          <button type="button" class="link" data-a="mode">
-            ${su ? 'Log in' : 'Create an account'}
-          </button>
-        </p>
+        <div style="
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 20px;
+  margin:8px 0 0;
+">
+
+  <span>
+    ${su ? 'Already have an account?' : 'New here?'}
+    <button type="button" class="link" data-a="mode">
+      ${su ? 'Log in' : 'Create an account'}
+    </button>
+  </span>
+
+  ${!su ? `
+    <button type="button" class="link" data-a="forgot-password">
+      Forgot Password?
+    </button>
+  ` : ''}
+
+</div>
+
       </form>
     `;
   },
