@@ -2119,9 +2119,84 @@ async function load() {
   }
 }
 
+let userGymTimeRows = [];
+let userGymTimeStatus = 'loading';
+
+async function loadUserGymTime() {
+  userGymTimeStatus = 'loading';
+  userGymTimeRows = [];
+
+  try {
+    const { data, error } = await db.rpc('admin_user_gym_time');
+    if (error) throw error;
+
+    userGymTimeRows = (data || []).map(row => ({
+      name: row.username?.trim() || `User #${row.user_id}`,
+      visits: Number(row.gym_visits ?? 0),
+      minutes: Number(row.gym_minutes ?? 0)
+    }));
+    userGymTimeStatus = 'ready';
+  } catch (error) {
+    userGymTimeStatus = 'error';
+    console.error('User gym time failed:', error);
+  }
+
+  if (S.screen === 'admin') render();
+}
+
+function formatGymTime(minutes) {
+  const totalMinutes = Math.round(minutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const remainder = totalMinutes % 60;
+  return `${hours}:${String(remainder).padStart(2, '0')}`;
+}
+
+function userGymTimeTable() {
+  let content;
+
+  if (userGymTimeStatus === 'loading') {
+    content = '<p>Loading user gym time…</p>';
+  } else if (userGymTimeStatus === 'error') {
+    content = '<p role="alert">Could not load user gym time.</p>';
+  } else {
+    const rows = userGymTimeRows.map(user => `
+      <tr>
+        <td>${spotText(user.name)}</td>
+        <td style="text-align: right;">${user.visits}</td>
+        <td style="text-align: right;">${formatGymTime(user.minutes)}</td>
+      </tr>
+    `).join('');
+
+    content = `
+      <div style="overflow-x:auto">
+        <table style="width:100%;text-align:left;border-spacing:12px">
+          <thead>
+            <tr>
+              <th scope="col">User</th>
+              <th scope="col" style="text-align: right;">Gym visits</th>
+              <th scope="col" style="text-align: right;">Total time (h:mm)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || '<tr><td colspan="3">No users found.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <h3>User Gym Time</h3>
+      <p class="hint">Total recorded gym time per user · All time</p>
+      ${content}
+    </div>
+  `;
+}
 
 async function loadUsageStats() {
   usageStatus = 'loading';
+  void loadUserGymTime();
 
   try {
     const result = await db
@@ -2531,7 +2606,9 @@ function render() {
     banner() +
     upNextPanel() +
     V[S.screen]() +
-    (S.screen === 'admin' ? equipmentUsageTable() : '');
+    (S.screen === 'admin'
+  ? equipmentUsageTable() + userGymTimeTable()
+  : '');
     
 
   
