@@ -2376,7 +2376,9 @@ if (notificationWrap) {
 const loginThemeToggle = $('#login-theme-toggle');
 
 if (loginThemeToggle) {
-  loginThemeToggle.hidden = S.screen !== 'login';
+  loginThemeToggle.hidden =
+    S.screen !== 'login' &&
+    S.screen !== 'gym-select';
 }
   const menuToggle = $('#menu-toggle');
   const menu = $('#spot-menu');

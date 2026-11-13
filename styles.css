@@ -983,7 +983,8 @@ body:has(.spot-gym-page) .app {
 body:has(.spot-gym-page) {
   margin: 0;
   width: 100%;
-  background: #f8f9fd;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 body:has(.spot-gym-page) .app {
@@ -1059,5 +1060,49 @@ body:has(.spot-gym-page) .app {
   .gym-page-heading {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+
+/* Gym selection theme and responsive fixes */
+
+.spot-gym-page,
+.spot-gym-page .gym-page-heading {
+  color: var(--ink);
+}
+
+.spot-gym-page .gym-page-heading h1 {
+  color: var(--ink);
+  opacity: 1;
+}
+
+.spot-gym-page .gym-page-heading p,
+.spot-gym-page .gym-location-message {
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .spot-gym-page {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .gym-photo-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .spot-location-card {
+    min-width: 0;
+  }
+
+  .gym-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gym-location-action {
+    width: 100%;
+    white-space: normal;
   }
 }
