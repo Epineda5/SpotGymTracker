@@ -1348,6 +1348,69 @@ document.addEventListener('click', event => {
   render();
 });
 
+let okrReturnRate = null;
+let okrLoadError = false;
+let okrRequestPending = false;
+
+async function loadOkrReturnRate() {
+  if (S.screen !== 'okrs' || document.hidden || okrRequestPending) return;
+
+  const viewer = S.me;
+  okrRequestPending = true;
+
+  try {
+    const { data, error } = await db.rpc('admin_okr_return_rate').single();
+
+    if (S.me !== viewer || S.screen !== 'okrs') return;
+    if (error) throw error;
+
+    okrReturnRate = data;
+    okrLoadError = false;
+  } catch (error) {
+    if (S.me !== viewer || S.screen !== 'okrs') return;
+
+    okrReturnRate = null;
+    okrLoadError = true;
+    console.error('Could not load OKR 1:', error);
+  } finally {
+    okrRequestPending = false;
+    if (S.me === viewer && S.screen === 'okrs') render();
+  }
+}
+
+function adminOkrsPage() {
+  let result = '<p>Loading return rate…</p>';
+
+  if (okrLoadError) {
+    result = '<p role="alert">Could not load the return rate. Retrying shortly.</p>';
+  } else if (okrReturnRate?.return_rate_pct === null) {
+    result = '<p>No check-ins recorded yet.</p>';
+  } else if (okrReturnRate) {
+    const rate = Number(okrReturnRate.return_rate_pct).toFixed(1);
+    const returned = Number(okrReturnRate.returned_users);
+    const total = Number(okrReturnRate.users_with_check_ins);
+
+    result = `
+      <p><strong>${rate}%</strong> all-time return rate</p>
+      <p>${returned} of ${total} users checked in at least twice.</p>
+    `;
+  }
+
+  return `
+    <h2>OKRs</h2>
+    <div class="card">
+      <h3>OKR 1 · User return rate</h3>
+      <p>Help gymgoers improve their gym experience and continue using Spot.</p>
+      <p class="hint">Target: 75%. Same-day check-ins count.</p>
+      ${result}
+    </div>
+  `;
+}
+
+setInterval(() => {
+  void loadOkrReturnRate();
+}, 15_000);
+
 function adminDashboard() {
   // Preserve expanded lists during automatic page updates.
   app.querySelectorAll('details[data-admin-panel]')
@@ -1402,6 +1465,7 @@ function adminDashboard() {
 
   return `
     <h2>Admin Dashboard</h2>
+    <button type="button" class="btn alt" data-a="open-okrs">OKRs</button>
       ${adminLocationPicker()}
     <div class="card">
       <h3>Equipment Status</h3>
@@ -1757,6 +1821,7 @@ profile: () => `
   `,
 
   admin: () => adminDashboard(),
+  okrs: () => adminOkrsPage(),
   
   
 find: () => `
@@ -2651,6 +2716,9 @@ if (!spotUserId) {
 
 function render() {
   if (!app || !V[S.screen]) return;
+  if (S.screen === 'okrs' && okrReturnRate === null && !okrLoadError) {
+  void loadOkrReturnRate();
+}
 
   const focused = document.activeElement;
   const inApp = focused && app.contains(focused);
@@ -3599,6 +3667,12 @@ if (b.id === 'profile-password-save') {
   }
 
   const a = b.dataset.a;
+  if (a === 'open-okrs' && S.screen === 'admin') {
+  okrReturnRate = null;
+  okrLoadError = false;
+  go('okrs');
+  return;
+}
   const e = b.dataset.id
     ? get(Number(b.dataset.id))
     : null;
