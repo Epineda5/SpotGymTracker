@@ -3661,20 +3661,29 @@ document.addEventListener('click', async ev => {
   ) return;
 
 
-if (b.id === 'notification-toggle') {
-  const panel = $('#notification-panel');
-
-  if (!panel) return;
-
-  panel.hidden = !panel.hidden;
-
-  b.setAttribute(
-    'aria-expanded',
-    String(!panel.hidden)
-  );
-
-  return;
-}
+  if (b.id === 'notification-toggle') {
+    const panel = $('#notification-panel');
+  
+    if (!panel) return;
+  
+    panel.hidden = !panel.hidden;
+  
+    b.setAttribute(
+      'aria-expanded',
+      String(!panel.hidden)
+    );
+  
+    // Mark notifications as read when the panel opens
+    if (!panel.hidden) {
+      spotNotifications.forEach(notification => {
+        notification.read = true;
+      });
+  
+      renderSpotNotifications();
+    }
+  
+    return;
+  }
 
 
   if (b.id === 'menu-toggle') {
@@ -3977,6 +3986,26 @@ if (b.id === 'profile-password-save') {
   }
 
   const a = b.dataset.a;
+  // Open the session duration screen when it is your turn
+  if (a === 'show-claim') {
+    const equipmentId = Number(b.dataset.id);
+    const machine = get(equipmentId);
+
+    if (
+      !machine ||
+      machine.status !== 'reserved' ||
+      machine.rows?.[0]?.user_id !== S.me ||
+      machine.claimLeft <= 0
+    ) {
+      toast('This machine is no longer ready to claim.');
+      return;
+    }
+
+    S.claim = equipmentId;
+    S.mins = 12;
+    go('claim');
+    return;
+  }
   if (a === 'open-okrs' && S.screen === 'admin') {
   okrReturnRate = null;
   okrLoadError = false;
