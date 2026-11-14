@@ -971,7 +971,7 @@ function go(screen, push = true) {
   } else if (push) {
     S.stack = [];
   }
-
+  if (screen === 'admin') adminGymId = '';
   S.screen = screen;
   S.msg = '';
 
@@ -1107,14 +1107,28 @@ function equipmentUsageTable() {
       "'": '&#39;'
     })[c]);
 
-  const rows = usageStats.map(machine => `
+  const statsById = new Map(
+  usageStats.map(row => [String(row.equipment_id), row])
+);
+
+const gymNames = new Map(
+  GYM_LOCATIONS.map(gym => [String(gym.gym_id), gym.name])
+);
+
+const rows = equipmentForGym(adminGymId || null).map(machine => {
+  const stats = statsById.get(String(machine.id));
+  const gymName = gymNames.get(String(machine.gym_id)) || 'Unknown location';
+
+  return `
     <tr>
       <td>${escapeText(machine.name)}</td>
-      <td>${Number(machine.completed_sessions)}</td>
-      <td>${Number(machine.total_minutes_used).toFixed(2)}</td>
-      <td>${Number(machine.average_minutes_per_session).toFixed(2)}</td>
+      <td>${escapeText(gymName)}</td>
+      <td>${stats ? Number(stats.completed_sessions) : '—'}</td>
+      <td>${stats ? Number(stats.total_minutes_used).toFixed(2) : '—'}</td>
+      <td>${stats ? Number(stats.average_minutes_per_session).toFixed(2) : '—'}</td>
     </tr>
-  `).join('');
+  `;
+}).join('');
 
   return `
     <div class="card">
@@ -1137,13 +1151,14 @@ function equipmentUsageTable() {
           <thead>
             <tr>
               <th>Machine</th>
+              <th>Location</th>
               <th>Times used</th>
               <th>Total minutes</th>
               <th>Average minutes</th>
             </tr>
           </thead>
           <tbody>
-            ${rows || '<tr><td colspan="4">No equipment found.</td></tr>'}
+            ${rows || '<tr><td colspan="5">No equipment found.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -1162,12 +1177,12 @@ let adminNamesStatus = 'idle';
 let adminNamesLoadedAt = 0;
 let adminNamesRequest = 0;
 
-async function loadAdminUsernames() {
+async function loadAdminUsernames(machines) {
   if (S.screen !== 'admin' || !S.me) return;
 
   const owner = S.me;
 
-  const ids = [...new Set(E.flatMap(e => [
+  const ids = [...new Set(machines.flatMap(e => [
     e.sess?.user_id,
     ...e.rows.map(row => row.user_id)
   ]).filter(id => id != null).map(String))].sort();
@@ -1293,6 +1308,39 @@ function adminStatPanel(key, count, label, contents) {
   `;
 }
 
+let adminGymId = '';
+
+function adminLocationPicker() {
+  const locations = [
+    { id: '', name: 'All locations' },
+    ...GYM_LOCATIONS.map(gym => ({
+      id: String(gym.gym_id),
+      name: gym.name
+    }))
+  ];
+
+  return `
+    <div class="admin-location-tabs" role="group" aria-label="Equipment location">
+      ${locations.map((location, index) => `
+        <button type="button"
+                id="admin-location-${index}"
+                data-admin-gym="${spotText(location.id)}"
+                aria-pressed="${location.id === adminGymId}">
+          ${spotText(location.name)}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('button[data-admin-gym]');
+  if (!button || S.screen !== 'admin') return;
+
+  adminGymId = button.dataset.adminGym;
+  render();
+});
+
 function adminDashboard() {
   // Preserve expanded lists during automatic page updates.
   app.querySelectorAll('details[data-admin-panel]')
@@ -1303,26 +1351,28 @@ function adminDashboard() {
         adminExpanded.delete(panel.dataset.adminPanel);
       }
     });
+  
+  const machines = equipmentForGym(adminGymId || null);  
 
-  void loadAdminUsernames();
+  void loadAdminUsernames(machines);
 
-  const available = E.filter(e =>
+  const available = machines.filter(e =>
     e.status === 'available'
   );
 
-  const inUse = E.filter(e =>
+  const inUse = machines.filter(e =>
     e.status === 'inuse'
   );
 
-  const reserved = E.filter(e =>
+  const reserved = machines.filter(e =>
     e.status === 'reserved'
   );
 
-  const unavailable = E.filter(e =>
+  const unavailable = machines.filter(e =>
     e.status === 'unavailable'
   );
 
-  const queues = E.filter(e => e.rows.length);
+  const queues = machines.filter(e => e.rows.length);
 
   const totalInLines = queues.reduce(
     (total, e) => total + e.rows.length,
@@ -1345,7 +1395,7 @@ function adminDashboard() {
 
   return `
     <h2>Admin Dashboard</h2>
-
+      ${adminLocationPicker()}
     <div class="card">
       <h3>Equipment Status</h3>
 
@@ -2024,16 +2074,19 @@ find: () => `
 // ========================================
 
 function derive() {
-  const now = vnow();
-  const gymId = S.gym?.gym_id;
+  E = equipmentForGym(S.gym?.gym_id);
+}
 
-  E = RAW.eq
-    .filter(eq => gymId ? eq.gym_id === gymId : true)
+function equipmentForGym(gymId) {
+  const now = vnow();
+
+  return RAW.eq
+    .filter(eq => gymId == null || String(eq.gym_id) === String(gymId))
     .map(q => {
       const rows = RAW.wl
         .filter(w => 
           w.equipment_id === q.equipment_id &&
-          (gymId ? w.gym_id === gymId : true)
+          String(w.gym_id) === String(q.gym_id)
         )
         .sort((a, b) => a.position - b.position);
 
@@ -2044,7 +2097,7 @@ function derive() {
 
       const e = {
         id: q.equipment_id,
-        gym_id: gymId,
+        gym_id: q.gymId,
         name: q.name,
         g: q.muscle_group,
         rows,
@@ -2359,6 +2412,11 @@ async function sync() {
 }
 
 function view() {
+  if (
+  S.screen === 'admin' &&
+  document.activeElement?.id === 'admin-gym-filter'
+) return;
+
   if (
     S.screen === 'gym-select' ||
     S.screen === 'login'
