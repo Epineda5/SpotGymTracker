@@ -1115,7 +1115,14 @@ const gymNames = new Map(
   GYM_LOCATIONS.map(gym => [String(gym.gym_id), gym.name])
 );
 
-const rows = equipmentForGym(adminGymId || null).map(machine => {
+  const rows = equipmentForGym(adminGymId || null)
+  .sort((a, b) => {
+    const locationA = gymNames.get(String(a.gym_id)) || 'Unknown location';
+    const locationB = gymNames.get(String(b.gym_id)) || 'Unknown location';
+
+    return locationA.localeCompare(locationB) || a.name.localeCompare(b.name);
+  })
+  .map(machine => {
   const stats = statsById.get(String(machine.id));
   const gymName = gymNames.get(String(machine.gym_id)) || 'Unknown location';
 
@@ -2097,7 +2104,7 @@ function equipmentForGym(gymId) {
 
       const e = {
         id: q.equipment_id,
-        gym_id: q.gymId,
+        gym_id: q.gym_id,
         name: q.name,
         g: q.muscle_group,
         rows,
