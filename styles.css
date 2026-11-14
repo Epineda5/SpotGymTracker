@@ -1320,3 +1320,121 @@ body:has(.spot-gym-page) .app {
     border-top-left-radius: 14px;
   }
 }
+
+#okr-demand-gym {
+  display: block;
+  width: min(100%, 16rem);
+  margin: 0.4rem 0 1rem;
+  padding: 0.65rem 2rem 0.65rem 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+#okr-demand-gym option {
+  background-color: Canvas;
+  color: CanvasText;
+}
+html[data-theme="dark"] #okr-demand-gym {
+  color-scheme: dark;
+  background-color: #172129;
+  color: #eef3f7;
+}
+.okr-demand-group + .okr-demand-group {
+  margin-top: 1.5rem;
+}
+
+.okr-demand-group h4 {
+  margin: 0 0 0.5rem;
+}
+
+.okr-demand-table-wrap {
+  margin-inline-start: clamp(0.25rem, 2vw, 1rem);
+  overflow-x: auto;
+}
+
+.okr-demand-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.okr-demand-table th,
+.okr-demand-table td {
+  padding: 0.5rem 0.4rem;
+  border-bottom: 1px solid rgb(128 128 128 / 25%);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.okr-demand-table th:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+.okr-demand-table tbody th {
+  font-weight: normal;
+}
+
+.okr-demand-table small {
+  display: block;
+}
+
+.okr-demand-warning {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  background: #ffdf8a;
+  color: #392600;
+  font-weight: 600;
+}
+
+.okr-usage-chart {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+
+.okr-usage-chart li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.okr-usage-chart strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.okr-usage-track {
+  grid-column: 1 / -1;
+  height: 0.55rem;
+  border-radius: 0.3rem;
+  background: rgb(128 128 128 / 22%);
+  overflow: hidden;
+}
+
+.okr-usage-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: #2b8ce6;
+}
+.admin-location-tabs.okr-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Use the available width of the OKR tabs, including with DevTools open. */
+.admin-location-tabs.okr-tabs {
+  container-type: inline-size;
+}
+
+@container (width < 42rem) {
+  .okr-tabs > button {
+    grid-column: span 2;
+  }
+}

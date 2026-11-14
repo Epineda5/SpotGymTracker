@@ -1353,8 +1353,13 @@ let okrLoadError = false;
 let okrRequestPending = false;
 
 async function loadOkrReturnRate() {
-  if (S.screen !== 'okrs' || document.hidden || okrRequestPending) return;
-
+if (
+  !S.me ||
+  S.screen !== 'okrs' ||
+  activeOkr !== 1 ||
+  document.hidden ||
+  okrRequestPending
+) return;
   const viewer = S.me;
   okrRequestPending = true;
 
@@ -1378,7 +1383,297 @@ async function loadOkrReturnRate() {
   }
 }
 
+let activeOkr = 1;
+let okrTiming = null;
+let okrTimingError = false;
+let okrTimingPending = false;
+
+async function loadOkrTiming() {
+  if (!S.me || S.screen !== 'okrs' || activeOkr !== 2 ||
+      document.hidden || okrTimingPending) return;
+
+  const viewer = S.me;
+  okrTimingPending = true;
+
+  try {
+    const { data, error } = await db.rpc('admin_okr_wait_and_visit_time').single();
+
+    if (S.me !== viewer || S.screen !== 'okrs' || activeOkr !== 2) return;
+    if (error) throw error;
+
+    okrTiming = data;
+    okrTimingError = false;
+  } catch (error) {
+    if (S.me !== viewer || S.screen !== 'okrs' || activeOkr !== 2) return;
+
+    okrTimingError = true;
+    console.error('Could not load OKR 2:', error);
+  } finally {
+    okrTimingPending = false;
+    if (S.me === viewer && S.screen === 'okrs' && activeOkr === 2) render();
+  }
+}
+
+let okrDemandRows = null;
+let okrDemandGym = '';
+let okrDemandError = false;
+let okrDemandPending = false;
+
+async function loadOkrDemand() {
+  if (!S.me || S.screen !== 'okrs' || activeOkr < 3 ||
+      document.hidden || okrDemandPending) return;
+
+  const viewer = S.me;
+  okrDemandPending = true;
+
+  try {
+    const { data, error } = await db.rpc('admin_okr_equipment_demand');
+    if (S.me !== viewer || S.screen !== 'okrs' || activeOkr < 3) return;
+    if (error) throw error;
+
+    okrDemandRows = data;
+    okrDemandError = false;
+  } catch (error) {
+    if (S.me !== viewer || S.screen !== 'okrs' || activeOkr < 3) return;
+
+    okrDemandError = true;
+    console.error('Could not load OKR 3:', error);
+  } finally {
+    okrDemandPending = false;
+    if (S.me === viewer && S.screen === 'okrs' && activeOkr >= 3) render();
+  }
+}
+
+function okrDemandCard() {
+  const gymNames = new Map(
+    GYM_LOCATIONS.map(gym => [String(gym.gym_id), gym.name])
+  );
+  const groups = new Map();
+
+  for (const row of okrDemandRows ?? []) {
+    const gymId = String(row.gym_id);
+    if (okrDemandGym && gymId !== okrDemandGym) continue;
+
+    if (!groups.has(gymId)) {
+      groups.set(gymId, {
+        name: gymNames.get(gymId) ?? 'Unknown gym',
+        rows: []
+      });
+    }
+
+    groups.get(gymId).rows.push(row);
+  }
+
+  const gyms = [...groups.values()].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
+  return `
+    <div class="card">
+      <h3>OKR 3 · Equipment demand</h3>
+      <p class="hint">Last 30 days · Test data</p>
+
+      <label for="okr-demand-gym">Gym</label>
+      <select id="okr-demand-gym">
+        <option value="">All gyms</option>
+        ${[...gymNames].map(([id, name]) => `
+          <option value="${spotText(id)}" ${id === okrDemandGym ? 'selected' : ''}>
+            ${spotText(name)}
+          </option>
+        `).join('')}
+      </select>
+
+      ${okrDemandError
+        ? '<p role="status">Could not refresh equipment demand. Retrying shortly.</p>'
+        : ''}
+      ${okrDemandRows === null && !okrDemandError
+        ? '<p>Loading equipment demand…</p>'
+        : ''}
+      ${okrDemandRows !== null && gyms.length === 0
+        ? '<p>No equipment found for this gym.</p>'
+        : ''}
+
+      ${gyms.length
+        ? '<p class="hint">Avg. wait measures time from joining the queue to notification.</p>'
+        : ''}
+      
+      <p class="hint">
+        High demand starts at 5 queue joins. Review capacity also requires
+        at least 20 queue joins per 100 completed sessions.
+      </p>
+
+      ${gyms.map(gym => `
+        <section class="okr-demand-group">
+          <h4>${spotText(gym.name)}</h4>
+          <div class="okr-demand-table-wrap">
+            <table class="okr-demand-table" aria-label="${spotText(gym.name)} equipment demand">
+              <thead>
+                <tr>
+                  <th scope="col">Machine</th>
+                  <th scope="col">Sessions</th>
+                  <th scope="col">Min used</th>
+                  <th scope="col">Queue joins</th>
+                  <th scope="col">Avg. wait</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${gym.rows.map(row => `
+                  <tr>
+                    <th scope="row">
+                      ${spotText(row.machine_name)}
+                      ${Number(row.waitlist_joins) >= 5
+                        ? `<small class="okr-demand-warning">${
+                            Number(row.completed_sessions) > 0 &&
+                            Number(row.waitlist_joins) * 100 >= Number(row.completed_sessions) * 20
+                              ? 'Review capacity'
+                              : 'High demand'
+                          }</small>`
+                        : ''}
+                    </th>
+                    <td>${Number(row.completed_sessions)}</td>
+                    <td>${Number(row.total_minutes).toFixed(2)}</td>
+                    <td>${Number(row.waitlist_joins)}</td>
+                    <td>${row.avg_notification_minutes == null
+                      ? '—'
+                      : `${Number(row.avg_notification_minutes).toFixed(2)} min
+                         <small>(${Number(row.notification_count)} measured)</small>`}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `).join('')}
+    </div>
+  `;
+}
+document.addEventListener('change', event => {
+  if (S.screen !== 'okrs' || activeOkr !== 3 ||
+      event.target.id !== 'okr-demand-gym') return;
+
+  okrDemandGym = event.target.value;
+  event.target.blur();
+render();
+});
+
+function okrUsagePatternsCard() {
+  const totals = new Map();
+
+  for (const row of okrDemandRows ?? []) {
+    const name = row.machine_name.trim();
+    const key = name.toLowerCase();
+    const machine = totals.get(key) ?? { name, sessions: 0 };
+
+    machine.sessions += Number(row.completed_sessions);
+    totals.set(key, machine);
+  }
+
+  const machines = [...totals.values()].sort((a, b) =>
+    b.sessions - a.sessions || a.name.localeCompare(b.name)
+  );
+  const maxSessions = Math.max(1, machines[0]?.sessions ?? 0);
+
+  const repeatedTypes = machines.filter(machine => machine.sessions >= 5).length;
+  const totalTypes = machines.length;
+  const repeatedUsePct = totalTypes ? (100 * repeatedTypes) / totalTypes : 0;
+
+  return `
+    <div class="card">
+      <h3>OKR 4 · Most-used equipment</h3>
+      <p class="hint">Completed sessions · All gyms · Last 30 days · Test data</p>
+      ${totalTypes > 0 ? `
+      <p>
+        <strong>${repeatedTypes} of ${totalTypes} equipment types
+          (${repeatedUsePct.toFixed(1)}%)</strong>
+        recorded at least 5 completed sessions.
+      </p>
+      <p class="hint">Target 70% · ${repeatedUsePct >= 70 ? 'Met' : 'Below target'}</p>
+    ` : ''}
+
+      ${okrDemandError
+        ? '<p role="status">Could not refresh equipment usage. Retrying shortly.</p>'
+        : ''}
+      ${okrDemandRows === null && !okrDemandError
+        ? '<p>Loading equipment usage…</p>'
+        : ''}
+      ${okrDemandRows !== null && machines.length === 0
+        ? '<p>No equipment found.</p>'
+        : ''}
+
+      ${machines.length ? `
+        <ul class="okr-usage-chart">
+          ${machines.map(machine => `
+            <li>
+              <span>${spotText(machine.name)}</span>
+              <strong>${machine.sessions}</strong>
+              <div class="okr-usage-track" aria-hidden="true">
+                <div class="okr-usage-bar"
+                  style="width: ${100 * machine.sessions / maxSessions}%"></div>
+              </div>
+            </li>
+          `).join('')}
+        </ul>
+      ` : ''}
+    </div>
+  `;
+}
+
 function adminOkrsPage() {
+  return `
+    <h2>OKRs</h2>
+    <div class="admin-location-tabs okr-tabs" role="group" aria-label="Choose an OKR">      <button type="button" data-a="show-okr-1"
+        aria-pressed="${activeOkr === 1}">OKR 1 · Return rate</button>
+      <button type="button" data-a="show-okr-2"
+        aria-pressed="${activeOkr === 2}">OKR 2 · Wait &amp; visit time</button>
+      <button type="button" data-a="show-okr-3"
+        aria-pressed="${activeOkr === 3}">OKR 3 · Equipment demand</button>
+      <button type="button" data-a="show-okr-4"
+        aria-pressed="${activeOkr === 4}">OKR 4 · Most-used equipment</button>
+    </div>
+  ${activeOkr === 4 ? okrUsagePatternsCard()
+  : activeOkr === 3 ? okrDemandCard()
+  : activeOkr === 2 ? okrTimingCard()
+  : okrReturnRateCard()}  
+  `;
+}
+
+function okrTimingCard() {
+  const d = okrTiming;
+  const minutes = value =>
+    value == null ? '—' : `${Number(value).toFixed(2)} min`;
+
+  const status = okrTimingError
+    ? '<p role="status">Refresh failed. Retrying shortly.</p>'
+    : d ? '' : '<p>Loading wait and visit times…</p>';
+
+  return `
+    <div class="card">
+      <h3>OKR 2 · Wait &amp; visit time</h3>
+      <p class="hint">Test data. Current averages include the baseline records and new activity.</p>
+      ${status}
+      ${d ? `
+        <h4>Average time to equipment notification</h4>
+        <p>Baseline ${minutes(d.baseline_wait_minutes)}
+          (${Number(d.baseline_wait_count)} notifications)</p>
+        <p><strong>Current ${minutes(d.current_wait_minutes)}</strong>
+          (${Number(d.current_wait_count)} notifications)</p>
+        <p>Target ${d.baseline_wait_minutes == null
+          ? '—' : `below ${minutes(d.baseline_wait_minutes)}`}</p>
+
+        <h4>Average gym visit duration</h4>
+        <p>Baseline ${minutes(d.baseline_visit_minutes)}
+          (${Number(d.baseline_visit_count)} manual checkouts)</p>
+        <p><strong>Current ${minutes(d.current_visit_minutes)}</strong>
+          (${Number(d.current_visit_count)} manual checkouts)</p>
+        <p>Target ${d.baseline_visit_minutes == null
+          ? '—' : `${minutes(Number(d.baseline_visit_minutes) * 0.9)} or less`}
+          (10% reduction)</p>
+      ` : ''}
+    </div>
+  `;
+}
+
+function okrReturnRateCard() {
   let result = '<p>Loading return rate…</p>';
 
   if (okrLoadError) {
@@ -1397,7 +1692,6 @@ function adminOkrsPage() {
   }
 
   return `
-    <h2>OKRs</h2>
     <div class="card">
       <h3>OKR 1 · User return rate</h3>
       <p>Help gymgoers improve their gym experience and continue using Spot.</p>
@@ -1407,9 +1701,14 @@ function adminOkrsPage() {
   `;
 }
 
-setInterval(() => {
-  void loadOkrReturnRate();
-}, 15_000);
+function refreshActiveOkr() {
+  if (S.screen !== 'okrs' || document.hidden) return;
+  if (activeOkr >= 3) return loadOkrDemand();
+  return activeOkr === 1 ? loadOkrReturnRate() : loadOkrTiming();
+}
+
+setInterval(refreshActiveOkr, 15_000);
+document.addEventListener('visibilitychange', refreshActiveOkr);
 
 function adminDashboard() {
   // Preserve expanded lists during automatic page updates.
@@ -2716,9 +3015,20 @@ if (!spotUserId) {
 
 function render() {
   if (!app || !V[S.screen]) return;
-  if (S.screen === 'okrs' && okrReturnRate === null && !okrLoadError) {
-  void loadOkrReturnRate();
-}
+  if (
+  S.screen === 'okrs' &&
+  activeOkr === 3 &&
+  document.activeElement?.id === 'okr-demand-gym'
+) return;
+
+  if (
+    S.screen === 'okrs' &&
+    activeOkr === 1 &&
+    okrReturnRate === null &&
+    !okrLoadError
+  ) {
+    void loadOkrReturnRate();
+  }
 
   const focused = document.activeElement;
   const inApp = focused && app.contains(focused);
@@ -3678,18 +3988,25 @@ if (b.id === 'profile-password-save') {
     : null;
 
   if (!a) return;
-    if (a === 'show-claim') {
-    if (
-      e?.status === 'reserved' &&
-      e.rows[0]?.user_id === S.me &&
-      e.claimLeft > 0
-    ) {
-      S.claim = e.id;
-      go('claim');
+    if (a === 'open-okrs' && S.screen === 'admin') {
+      activeOkr = 1;
+      okrReturnRate = null;
+      okrLoadError = false;
+      okrTiming = null;
+      okrTimingError = false;
+      go('okrs');
+      return;
     }
 
-    return;
-  }
+    if (
+      S.screen === 'okrs' &&
+      ['show-okr-1', 'show-okr-2', 'show-okr-3', 'show-okr-4'].includes(a)
+    ) {
+      activeOkr = Number(a.slice(-1));
+      render();
+      void refreshActiveOkr();
+      return;
+    }
 
   if (a === 'set-next' || a === 'clear-next') {
     if (
