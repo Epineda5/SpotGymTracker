@@ -1438,3 +1438,58 @@ html[data-theme="dark"] #okr-demand-gym {
     grid-column: span 2;
   }
 }
+
+
+/* =========================================
+   SPOT - MOBILE LAYOUT FIXES
+   Notifications, Menu, Profile DOB
+========================================= */
+
+@media (max-width: 600px) {
+
+  /* 1. Fix notification dropdown */
+  .notification-panel {
+    position: fixed;
+    top: 75px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 95px);
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  /* 2. Fix profile date of birth input */
+  .profile-page,
+  .profile-page .card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .profile-page #profile-dob {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-left: 0;
+    margin-right: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* 3. Fix menu dropdown */
+  .bar .spot-menu {
+    position: fixed;
+    top: 75px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 95px);
+    overflow-y: auto;
+    z-index: 101;
+  }
+
+}
