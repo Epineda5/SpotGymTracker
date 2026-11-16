@@ -13,3 +13,7 @@ and search for a treadmill. Sign up for 8-15 minutes and let the timer run out.
 
 
 The URL for Website: https://epineda5.github.io/SpotGymTracker/?utm_source=chatgpt.com
+
+Dataflow Diagram Level 0: ![Dataflow Diagram Level 0](<DF_Diagram_Level_0.png>)
+
+Dataflow Diagram Level 1: ![Dataflow Diagram Level 0](<DF_Diagram_Level_1.png>)
