@@ -1848,6 +1848,35 @@ function adminDashboard() {
       )}
     </div>
 
+        <div class="card">
+      <h3>Early Session Ends</h3>
+
+      <p class="hint">
+        Sessions finished before their scheduled end time.
+      </p>
+
+      ${earlyEndStatus === 'ready' && earlyEndStats ? (() => {
+        const q = earlyEndStats;
+        const min = v => v == null ? '—' : Number(v).toFixed(1) + ' min';
+        const rate = Number(q.completed_sessions) > 0
+          ? ' (' + (100 * Number(q.early_ends) /
+              Number(q.completed_sessions)).toFixed(1) + '%)'
+          : '';
+
+        return `
+          <div class="stats admin-stats">
+            <div class="stat"><b>${Number(q.early_ends)}</b>
+              Ended early${rate}</div>
+            <div class="stat"><b>${min(q.avg_minutes_early)}</b>
+              Avg. time ended early</div>
+            <div class="stat"><b>${min(q.total_minutes_early)}</b>
+              Total time freed up</div>
+          </div>`;
+      })() : earlyEndStatus === 'error'
+        ? '<p class="hint" role="status">Could not load early end stats.</p>'
+        : '<p class="hint">Loading…</p>'}
+    </div>
+
     ${adminNamesStatus === 'loading'
       ? '<p class="hint">Loading usernames…</p>'
       : ''}
@@ -2584,6 +2613,25 @@ async function loadUserGymTime() {
 
   if (S.screen === 'admins') render();
 }
+let earlyEndStats = null;
+let earlyEndStatus = 'loading';
+
+async function loadEarlyEndStats() {
+  earlyEndStatus = 'loading';
+
+  try {
+    const { data, error } = await db.rpc('admin_early_end_stats').single();
+    if (error) throw error;
+
+    earlyEndStats = data;
+    earlyEndStatus = 'ready';
+  } catch (error) {
+    earlyEndStatus = 'error';
+    console.error('Early end stats failed:', error);
+  }
+
+  if (S.screen === 'admins') render();
+}
 
 function formatGymTime(minutes) {
   const totalMinutes = Math.round(minutes);
@@ -2638,6 +2686,7 @@ function userGymTimeTable() {
 async function loadUsageStats() {
   usageStatus = 'loading';
   void loadUserGymTime();
+  void loadEarlyEndStats();
 
   try {
     const result = await db
