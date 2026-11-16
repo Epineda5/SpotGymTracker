@@ -98,7 +98,7 @@ async function getSpotUser() {
 const MAXLISTS = 3;
 const AVG = 720;
 const CLAIM = 90;
-const ADMIN_EMAIL = 'adminchris@example.com';
+
 
 let E = [];
 let RAW = { 
@@ -172,7 +172,7 @@ function upNextPanelContents() {
   if (
     !upNextReady ||
     !S.me ||
-    ['login', 'gym-select', 'admin'].includes(S.screen)
+    ['login', 'gym-select', 'admins'].includes(S.screen)
   ) return '';
 
   const pending = upNextState.selection;
@@ -373,6 +373,22 @@ async function refreshEquipmentState() {
   applyEquipmentState(data);
   return true;
 }
+
+async function isAdmin(userId) {
+  try {
+    const { data, error } = await db
+      .from('users')
+      .select('is_admin')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    return !error && !!data?.is_admin;
+  } catch (e) {
+    return false;
+  }
+}
+
+
 
 const GROUPS = [
   'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Cardio'
@@ -971,7 +987,7 @@ function go(screen, push = true) {
   } else if (push) {
     S.stack = [];
   }
-  if (screen === 'admin') adminGymId = '';
+  if (screen === 'admins') adminGymId = '';
   S.screen = screen;
   S.msg = '';
 
@@ -1043,8 +1059,8 @@ function busyMsg() {
     '. Finish that session before starting another.';
 }
 
-function banner() {
-  if (S.email === ADMIN_EMAIL) {
+async function banner() {
+  if (S.isAdmin) {
     return `
       <div class="card now">
         <b>Spot Admin</b>
@@ -1052,6 +1068,7 @@ function banner() {
       </div>
     `;
   }
+
 
   const u = using();
 
@@ -1185,7 +1202,7 @@ let adminNamesLoadedAt = 0;
 let adminNamesRequest = 0;
 
 async function loadAdminUsernames(machines) {
-  if (S.screen !== 'admin' || !S.me) return;
+  if (S.screen !== 'admins' || !S.me) return;
 
   const owner = S.me;
 
@@ -1252,7 +1269,7 @@ async function loadAdminUsernames(machines) {
 
   adminNamesLoadedAt = Date.now();
 
-  if (S.screen === 'admin' && S.me === owner) {
+  if (S.screen === 'admins' && S.me === owner) {
     render();
   }
 }
@@ -1342,7 +1359,7 @@ function adminLocationPicker() {
 
 document.addEventListener('click', event => {
   const button = event.target.closest('button[data-admin-gym]');
-  if (!button || S.screen !== 'admin') return;
+  if (!button || S.screen !== 'admins') return;
 
   adminGymId = button.dataset.adminGym;
   render();
@@ -2119,7 +2136,7 @@ profile: () => `
     </form>
   `,
 
-  admin: () => adminDashboard(),
+  admins: () => adminDashboard(),
   okrs: () => adminOkrsPage(),
   
   
@@ -2565,7 +2582,7 @@ async function loadUserGymTime() {
     console.error('User gym time failed:', error);
   }
 
-  if (S.screen === 'admin') render();
+  if (S.screen === 'admins') render();
 }
 
 function formatGymTime(minutes) {
@@ -2639,7 +2656,7 @@ async function loadUsageStats() {
     console.error('Usage statistics failed:', error);
   }
 
-  if (S.screen === 'admin') render();
+  if (S.screen === 'admins') render();
 }
 
 let averageWaitStats = [];
@@ -2784,7 +2801,7 @@ async function sync() {
 
 function view() {
   if (
-  S.screen === 'admin' &&
+  S.screen === 'admins' &&
   document.activeElement?.id === 'admin-gym-filter'
 ) return;
 
@@ -3013,7 +3030,7 @@ if (!spotUserId) {
 }
 
 
-function render() {
+async function render() {
   if (!app || !V[S.screen]) return;
   if (
   S.screen === 'okrs' &&
@@ -3046,10 +3063,10 @@ function render() {
   const key = inApp ? focusKey(focused) : '';
 
   app.innerHTML =
-    banner() +
+    await banner() +
     upNextPanel() +
     V[S.screen]() +
-    (S.screen === 'admin'
+    (S.screen === 'admins'
   ? equipmentUsageTable() + userGymTimeTable()
   : '');
     
@@ -3127,11 +3144,11 @@ if (loginThemeToggle) {
 
   const brand = $('#brand') || $('.brand');
 
-  if (brand) {
-  brand.textContent =
-    S.email === ADMIN_EMAIL ? 'Spot Admin' : 'Spot';
+if (brand) {
+  brand.textContent = S.isAdmin ? 'Spot Admin' : 'Spot';
   brand.disabled = !S.me || !S.gym || S.screen === 'find';
 }
+
 }
 
 // ========================================
@@ -3153,16 +3170,17 @@ async function enter(id) {
 
   await db.from('users')
     .update({ checked_in: true })
-    .eq('user_id', id);
+    .eq('user_id', id)
+    .select();
 
-  const openRow = await db.from('check_ins')
+  const openRow = db.from('check_ins')
     .select('check_in_id')
     .eq('user_id', id)
     .is('checked_out_at', null)
     .limit(1);
 
   if (!openRow.data || !openRow.data.length) {
-    await db.from('check_ins').insert({ user_id: id });
+    db.from('check_ins').insert({ user_id: id });
   }
 
   const user = await db.from('users')
@@ -3214,21 +3232,32 @@ async function enter(id) {
 
 
   
-  S.screen = S.email === ADMIN_EMAIL
-  ? 'admin'
-  : 'gym-select';
+  // Check if user is admin
+const { data: adminData, error: adminError } = await db
+  .from('users')
+  .select('is_admin')
+  .eq('user_id', S.me)
+  .maybeSingle();
 
-  S.stack = [];
+S.isAdmin = await isAdmin(S.me);
+S.screen = S.isAdmin ? 'admins' : 'gym-select';
 
-  render();
+S.screen = adminError || !adminData || !adminData.is_admin
+  ? 'gym-select'
+  : 'admins';
 
-  if (S.screen === 'gym-select') {
-    checkExistingLocationPermission();
-  }
+S.stack = [];
 
-  if (S.screen === 'admin') {
-    loadUsageStats();
-  }
+render();
+
+if (S.screen === 'gym-select') {
+  checkExistingLocationPermission();
+}
+
+if (S.screen === 'admins') {
+  loadUsageStats();
+}
+
 }
 
 document.addEventListener('submit', async ev => {
@@ -4006,7 +4035,7 @@ if (b.id === 'profile-password-save') {
     go('claim');
     return;
   }
-  if (a === 'open-okrs' && S.screen === 'admin') {
+  if (a === 'open-okrs' && S.screen === 'admins') {
   okrReturnRate = null;
   okrLoadError = false;
   go('okrs');
@@ -4017,7 +4046,7 @@ if (b.id === 'profile-password-save') {
     : null;
 
   if (!a) return;
-    if (a === 'open-okrs' && S.screen === 'admin') {
+    if (a === 'open-okrs' && S.screen === 'admins') {
       activeOkr = 1;
       okrReturnRate = null;
       okrLoadError = false;
@@ -4611,6 +4640,7 @@ setInterval(async () => {
   S.group = null;
   S.q = '';
   S.ok = true;
+  S.isAdmin = false;
 
   E = [];
   resetGym();
