@@ -3222,15 +3222,25 @@ async function enter(id) {
     .eq('user_id', id)
     .select();
 
-  const openRow = db.from('check_ins')
-    .select('check_in_id')
-    .eq('user_id', id)
-    .is('checked_out_at', null)
-    .limit(1);
+  const openRow = await db.from('check_ins')
+  .select('check_in_id')
+  .eq('user_id', id)
+  .is('checked_out_at', null)
+  .limit(1);
 
-  if (!openRow.data || !openRow.data.length) {
-    db.from('check_ins').insert({ user_id: id });
+if (openRow.error) {
+  toast('Could not check in: ' + openRow.error.message);
+  return;
+}
+
+if (!openRow.data.length) {
+  const { error } = await db.from('check_ins').insert({ user_id: id });
+
+  if (error) {
+    toast('Could not check in: ' + error.message);
+    return;
   }
+}
 
   const user = await db.from('users')
     .select('email, avatar_url, notifications_enabled')
